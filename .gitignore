@@ -1,3 +1,10 @@
+# IDE
+.vscode/
+
+# cmake
+build/
+.cache/
+
 # Prerequisites
 *.d
 

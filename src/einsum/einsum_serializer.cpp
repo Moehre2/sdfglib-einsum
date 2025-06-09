@@ -1,10 +1,12 @@
 #include "sdfg/einsum/einsum_serializer.h"
 
+#include "sdfg/data_flow/library_node.h"
+
 namespace sdfg {
 namespace einsum {
 
 nlohmann::json EinsumSerializer::serialize(const sdfg::data_flow::LibraryNode& library_node) {
-    if (library_node.type() != LibraryNodeType_Einsum) {
+    if (library_node.code() != LibraryNodeType_Einsum) {
         throw std::runtime_error("Invalid library node type");
     }
 
@@ -30,9 +32,9 @@ nlohmann::json EinsumSerializer::serialize(const sdfg::data_flow::LibraryNode& l
     return j;
 }
 
-data_flow::LibraryNode& EinsumSerializer::deserialize(const nlohmann::json& j,
-                                                      sdfg::builder::StructuredSDFGBuilder& builder,
-                                                      sdfg::structured_control_flow::Block& parent) {
+data_flow::LibraryNode& EinsumSerializer::deserialize(
+    const nlohmann::json& j, sdfg::builder::StructuredSDFGBuilder& builder,
+    sdfg::structured_control_flow::Block& parent) {
     if (j["type"] != "library_node") {
         throw std::runtime_error("Invalid library node type");
     }
@@ -46,12 +48,13 @@ data_flow::LibraryNode& EinsumSerializer::deserialize(const nlohmann::json& j,
     auto inputs = j["inputs"].get<std::vector<std::string>>();
     auto outputs = j["outputs"].get<std::vector<std::string>>();
 
-    auto& einsum_node = builder.add_library_node<EinsumNode>(parent, code, outputs, inputs, side_effect);
+    auto& einsum_node = builder.add_library_node<EinsumNode>(
+        parent, data_flow::LibraryNodeCode(code), outputs, inputs, side_effect);
 
     // TODO: Add more fields to the EinsumNode
 
     return einsum_node;
 }
 
-}
-}
+}  // namespace einsum
+}  // namespace sdfg
