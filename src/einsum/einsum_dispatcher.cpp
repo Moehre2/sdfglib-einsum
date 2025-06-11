@@ -3,17 +3,18 @@
 namespace sdfg {
 namespace einsum {
 
-EinsumDispatcher::EinsumDispatcher(LanguageExtension& language_extension, const Function& function,
-                          const data_flow::DataFlowGraph& data_flow_graph,
-                          const data_flow::LibraryNode& node)
-        : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {}
+EinsumDispatcher::EinsumDispatcher(codegen::LanguageExtension& language_extension,
+                                   const Function& function,
+                                   const data_flow::DataFlowGraph& data_flow_graph,
+                                   const data_flow::LibraryNode& node)
+    : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {}
 
-void EinsumDispatcher::dispatch(PrettyPrinter& stream) {
+void EinsumDispatcher::dispatch(codegen::PrettyPrinter& stream) {
     stream << "{" << std::endl;
     stream.setIndent(stream.indent() + 4);
 
     // Connector declarations
-    for (auto& iedge : this->data_flow_graph_.in_edges(libnode)) {
+    for (auto& iedge : this->data_flow_graph_.in_edges(this->node_)) {
         auto& src = dynamic_cast<const data_flow::AccessNode&>(iedge.src());
         const types::IType& src_type = this->function_.type(src.data());
 
@@ -26,7 +27,7 @@ void EinsumDispatcher::dispatch(PrettyPrinter& stream) {
                << this->language_extension_.subset(function_, src_type, iedge.subset()) << ";"
                << std::endl;
     }
-    for (auto& oedge : this->data_flow_graph_.out_edges(libnode)) {
+    for (auto& oedge : this->data_flow_graph_.out_edges(this->node_)) {
         auto& dst = dynamic_cast<const data_flow::AccessNode&>(oedge.dst());
         const types::IType& dst_type = this->function_.type(dst.data());
 
@@ -36,13 +37,13 @@ void EinsumDispatcher::dispatch(PrettyPrinter& stream) {
     }
 
     stream << std::endl;
-    
+
     // TODO: Einsum code goes here
 
     stream << std::endl;
 
     // Write back
-    for (auto& oedge : this->data_flow_graph_.out_edges(libnode)) {
+    for (auto& oedge : this->data_flow_graph_.out_edges(this->node_)) {
         auto& dst = dynamic_cast<const data_flow::AccessNode&>(oedge.dst());
         const types::IType& type = this->function_.type(dst.data());
         stream << dst.data() << this->language_extension_.subset(function_, type, oedge.subset())
@@ -55,5 +56,5 @@ void EinsumDispatcher::dispatch(PrettyPrinter& stream) {
     stream << "}" << std::endl;
 }
 
-}
-}
+}  // namespace einsum
+}  // namespace sdfg
