@@ -15,14 +15,15 @@
 namespace sdfg {
 namespace einsum {
 
-EinsumNode::EinsumNode(const DebugInfo& debug_info, const graph::Vertex vertex,
+EinsumNode::EinsumNode(size_t element_id, const DebugInfo& debug_info, const graph::Vertex vertex,
                        data_flow::DataFlowGraph& parent, const data_flow::LibraryNodeCode& code,
                        const std::vector<std::string>& outputs,
                        const std::vector<std::string>& inputs, const bool side_effect,
                        const std::vector<std::pair<symbolic::Symbol, symbolic::Expression>>& maps,
                        const std::vector<std::string>& out_indices,
                        const std::vector<std::vector<std::string>>& in_indices)
-    : data_flow::LibraryNode(debug_info, vertex, parent, code, outputs, inputs, side_effect),
+    : data_flow::LibraryNode(element_id, debug_info, vertex, parent, code, outputs, inputs,
+                             side_effect),
       maps_(maps),
       out_indices_(out_indices),
       in_indices_(in_indices) {
@@ -100,11 +101,12 @@ const std::string& EinsumNode::in_index(size_t index1, size_t index2) const {
     return this->in_indices_[index1][index2];
 }
 
-std::unique_ptr<data_flow::DataFlowNode> EinsumNode::clone(const graph::Vertex vertex,
+std::unique_ptr<data_flow::DataFlowNode> EinsumNode::clone(size_t element_id,
+                                                           const graph::Vertex vertex,
                                                            data_flow::DataFlowGraph& parent) const {
-    return std::make_unique<EinsumNode>(this->debug_info(), vertex, parent, this->code(),
-                                        this->outputs(), this->inputs(), this->side_effect(),
-                                        this->maps(), this->out_indices(), this->in_indices());
+    return std::make_unique<EinsumNode>(
+        element_id, this->debug_info(), vertex, parent, this->code(), this->outputs(),
+        this->inputs(), this->side_effect(), this->maps(), this->out_indices(), this->in_indices());
 }
 
 void EinsumNode::replace(const symbolic::Expression& old_expression,

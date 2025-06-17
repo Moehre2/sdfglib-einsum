@@ -26,7 +26,7 @@ class EinsumNode : public data_flow::LibraryNode {
     std::vector<std::vector<std::string>> in_indices_;
 
    public:
-    EinsumNode(const DebugInfo& debug_info, const graph::Vertex vertex,
+    EinsumNode(size_t element_id, const DebugInfo& debug_info, const graph::Vertex vertex,
                data_flow::DataFlowGraph& parent, const data_flow::LibraryNodeCode& code,
                const std::vector<std::string>& outputs, const std::vector<std::string>& inputs,
                const bool side_effect,
@@ -58,7 +58,8 @@ class EinsumNode : public data_flow::LibraryNode {
     const std::string& in_index(size_t index1, size_t index2) const;
 
     virtual std::unique_ptr<data_flow::DataFlowNode> clone(
-        const graph::Vertex vertex, data_flow::DataFlowGraph& parent) const override;
+        size_t element_id, const graph::Vertex vertex,
+        data_flow::DataFlowGraph& parent) const override;
 
     virtual void replace(const symbolic::Expression& old_expression,
                          const symbolic::Expression& new_expression) override;
