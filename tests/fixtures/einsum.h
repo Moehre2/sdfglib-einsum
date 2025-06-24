@@ -25,7 +25,7 @@ inline std::pair<std::unique_ptr<StructuredSDFG>, einsum::EinsumNode*> matrix_ma
     builder.add_container("I", sym_desc, true);
     builder.add_container("J", sym_desc, true);
     builder.add_container("K", sym_desc, true);
-    
+
     types::Scalar base_desc(types::PrimitiveType::Float);
     types::Pointer desc(base_desc);
     types::Pointer desc2(*desc.clone());
@@ -64,7 +64,7 @@ inline std::pair<std::unique_ptr<StructuredSDFG>, einsum::EinsumNode*> tensor_co
     builder.add_container("L", sym_desc, true);
     builder.add_container("M", sym_desc, true);
     builder.add_container("N", sym_desc, true);
-    
+
     types::Scalar base_desc(types::PrimitiveType::Float);
     types::Pointer desc(base_desc);
     types::Pointer desc2(*desc.clone());
@@ -107,7 +107,7 @@ inline std::pair<std::unique_ptr<StructuredSDFG>, einsum::EinsumNode*> matrix_ve
     types::Scalar sym_desc(types::PrimitiveType::UInt64);
     builder.add_container("I", sym_desc, true);
     builder.add_container("J", sym_desc, true);
-    
+
     types::Scalar base_desc(types::PrimitiveType::Float);
     types::Pointer desc(base_desc);
     types::Pointer desc2(*desc.clone());
@@ -140,7 +140,7 @@ inline std::pair<std::unique_ptr<StructuredSDFG>, einsum::EinsumNode*> diagonal_
 
     types::Scalar sym_desc(types::PrimitiveType::UInt64);
     builder.add_container("I", sym_desc, true);
-    
+
     types::Scalar base_desc(types::PrimitiveType::Float);
     types::Pointer desc(base_desc);
     types::Pointer desc2(*desc.clone());
@@ -168,7 +168,7 @@ inline std::pair<std::unique_ptr<StructuredSDFG>, einsum::EinsumNode*> matrix_tr
 
     types::Scalar sym_desc(types::PrimitiveType::UInt64);
     builder.add_container("I", sym_desc, true);
-    
+
     types::Scalar base_desc(types::PrimitiveType::Float);
     types::Pointer desc(base_desc);
     types::Pointer desc2(*desc.clone());
@@ -190,3 +190,172 @@ inline std::pair<std::unique_ptr<StructuredSDFG>, einsum::EinsumNode*> matrix_tr
 
     return std::make_pair(builder.move(), dynamic_cast<einsum::EinsumNode*>(&libnode));
 }
+
+inline std::pair<std::unique_ptr<StructuredSDFG>, einsum::EinsumNode*> matrix_copy() {
+    builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
+
+    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    builder.add_container("I", sym_desc, true);
+    builder.add_container("J", sym_desc, true);
+
+    types::Scalar base_desc(types::PrimitiveType::Float);
+    types::Pointer desc(base_desc);
+    types::Pointer desc2(*desc.clone());
+    builder.add_container("A", desc2, true);
+    builder.add_container("B", desc2, true);
+
+    auto& root = builder.subject().root();
+    auto& block = builder.add_block(root);
+    auto& A = builder.add_access(block, "A");
+    auto& B = builder.add_access(block, "B");
+    auto& libnode =
+        builder.add_library_node<einsum::EinsumNode,
+                                 std::vector<std::pair<symbolic::Symbol, symbolic::Expression>>,
+                                 std::vector<std::string>, std::vector<std::vector<std::string>>>(
+            block, einsum::LibraryNodeType_Einsum, {"_out"}, {"_in"}, false, DebugInfo(),
+            {{symbolic::symbol("i"), symbolic::symbol("I")},
+             {symbolic::symbol("j"), symbolic::symbol("J")}},
+            {"i", "j"}, {{"i", "j"}});
+    builder.add_memlet(block, A, "void", libnode, "_in", {});
+    builder.add_memlet(block, libnode, "_out", B, "void", {});
+
+    return std::make_pair(builder.move(), dynamic_cast<einsum::EinsumNode*>(&libnode));
+}
+
+inline std::pair<std::unique_ptr<StructuredSDFG>, einsum::EinsumNode*> matrix_transpose() {
+    builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
+
+    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    builder.add_container("I", sym_desc, true);
+    builder.add_container("J", sym_desc, true);
+
+    types::Scalar base_desc(types::PrimitiveType::Float);
+    types::Pointer desc(base_desc);
+    types::Pointer desc2(*desc.clone());
+    builder.add_container("A", desc2, true);
+    builder.add_container("B", desc2, true);
+
+    auto& root = builder.subject().root();
+    auto& block = builder.add_block(root);
+    auto& A = builder.add_access(block, "A");
+    auto& B = builder.add_access(block, "B");
+    auto& libnode =
+        builder.add_library_node<einsum::EinsumNode,
+                                 std::vector<std::pair<symbolic::Symbol, symbolic::Expression>>,
+                                 std::vector<std::string>, std::vector<std::vector<std::string>>>(
+            block, einsum::LibraryNodeType_Einsum, {"_out"}, {"_in"}, false, DebugInfo(),
+            {{symbolic::symbol("i"), symbolic::symbol("I")},
+             {symbolic::symbol("j"), symbolic::symbol("J")}},
+            {"j", "i"}, {{"i", "j"}});
+    builder.add_memlet(block, A, "void", libnode, "_in", {});
+    builder.add_memlet(block, libnode, "_out", B, "void", {});
+
+    return std::make_pair(builder.move(), dynamic_cast<einsum::EinsumNode*>(&libnode));
+}
+
+inline std::pair<std::unique_ptr<StructuredSDFG>, einsum::EinsumNode*> dot_product() {
+    builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
+
+    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    builder.add_container("I", sym_desc, true);
+
+    types::Scalar base_desc(types::PrimitiveType::Float);
+    types::Pointer desc(base_desc);
+    builder.add_container("a", desc, true);
+    builder.add_container("b", desc, true);
+    builder.add_container("c", desc, true);
+
+    auto& root = builder.subject().root();
+    auto& block = builder.add_block(root);
+    auto& a = builder.add_access(block, "a");
+    auto& b = builder.add_access(block, "b");
+    auto& c = builder.add_access(block, "c");
+    auto& libnode =
+        builder.add_library_node<einsum::EinsumNode,
+                                 std::vector<std::pair<symbolic::Symbol, symbolic::Expression>>,
+                                 std::vector<std::string>, std::vector<std::vector<std::string>>>(
+            block, einsum::LibraryNodeType_Einsum, {"_out"}, {"_in1", "_in2"}, false, DebugInfo(),
+            {{symbolic::symbol("i"), symbolic::symbol("I")}}, {"i"}, {{"i"}, {"i"}});
+    builder.add_memlet(block, a, "void", libnode, "_in1", {});
+    builder.add_memlet(block, b, "void", libnode, "_in2", {});
+    builder.add_memlet(block, libnode, "_out", c, "void", {});
+
+    return std::make_pair(builder.move(), dynamic_cast<einsum::EinsumNode*>(&libnode));
+}
+
+inline std::pair<std::unique_ptr<StructuredSDFG>, einsum::EinsumNode*> matrix_elementwise_mult() {
+    builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
+
+    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    builder.add_container("I", sym_desc, true);
+    builder.add_container("J", sym_desc, true);
+
+    types::Scalar base_desc(types::PrimitiveType::Float);
+    types::Pointer desc(base_desc);
+    types::Pointer desc2(*desc.clone());
+    builder.add_container("A", desc2, true);
+    builder.add_container("B", desc2, true);
+    builder.add_container("C", desc2, true);
+    builder.add_container("D", desc2, true);
+
+    auto& root = builder.subject().root();
+    auto& block = builder.add_block(root);
+    auto& A = builder.add_access(block, "A");
+    auto& B = builder.add_access(block, "B");
+    auto& C = builder.add_access(block, "C");
+    auto& D = builder.add_access(block, "D");
+    auto& libnode =
+        builder.add_library_node<einsum::EinsumNode,
+                                 std::vector<std::pair<symbolic::Symbol, symbolic::Expression>>,
+                                 std::vector<std::string>, std::vector<std::vector<std::string>>>(
+            block, einsum::LibraryNodeType_Einsum, {"_out"}, {"_in1", "_in2", "_in3"}, false,
+            DebugInfo(),
+            {{symbolic::symbol("i"), symbolic::symbol("I")},
+             {symbolic::symbol("j"), symbolic::symbol("J")}},
+            {"i", "j"}, {{"i", "j"}, {"i", "j"}, {"i", "j"}});
+    builder.add_memlet(block, A, "void", libnode, "_in1", {});
+    builder.add_memlet(block, B, "void", libnode, "_in2", {});
+    builder.add_memlet(block, C, "void", libnode, "_in3", {});
+    builder.add_memlet(block, libnode, "_out", D, "void", {});
+
+    return std::make_pair(builder.move(), dynamic_cast<einsum::EinsumNode*>(&libnode));
+}
+
+inline std::pair<std::unique_ptr<StructuredSDFG>, einsum::EinsumNode*> vector_scaling() {
+    builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
+
+    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    builder.add_container("I", sym_desc, true);
+
+    types::Scalar base_desc(types::PrimitiveType::Float);
+    types::Pointer desc(base_desc);
+    builder.add_container("a", desc, true);
+    builder.add_container("b", desc, true);
+    builder.add_container("c", desc, true);
+    builder.add_container("d", desc, true);
+    builder.add_container("e", desc, true);
+
+    auto& root = builder.subject().root();
+    auto& block = builder.add_block(root);
+    auto& a = builder.add_access(block, "a");
+    auto& b = builder.add_access(block, "b");
+    auto& c = builder.add_access(block, "c");
+    auto& d = builder.add_access(block, "d");
+    auto& e = builder.add_access(block, "e");
+    auto& libnode =
+        builder.add_library_node<einsum::EinsumNode,
+                                 std::vector<std::pair<symbolic::Symbol, symbolic::Expression>>,
+                                 std::vector<std::string>, std::vector<std::vector<std::string>>>(
+            block, einsum::LibraryNodeType_Einsum, {"_out"}, {"_in1", "_in2", "_in3", "_in4"},
+            false, DebugInfo(), {{symbolic::symbol("i"), symbolic::symbol("I")}}, {"i"},
+            {{"i"}, {}, {}, {}});
+    builder.add_memlet(block, a, "void", libnode, "_in1", {});
+    builder.add_memlet(block, b, "void", libnode, "_in2", {});
+    builder.add_memlet(block, c, "void", libnode, "_in3", {});
+    builder.add_memlet(block, d, "void", libnode, "_in4", {});
+    builder.add_memlet(block, libnode, "_out", e, "void", {});
+
+    return std::make_pair(builder.move(), dynamic_cast<einsum::EinsumNode*>(&libnode));
+}
+
+// scaling

@@ -58,3 +58,54 @@ TEST(EinsumNode, MatrixTrace) {
 
     EXPECT_EQ(node->toStr(), "_out = _in[i,i] for i = 0:I");
 }
+
+TEST(EinsumNode, MatrixCopy) {
+    auto sdfg_and_node = matrix_copy();
+    auto sdfg = std::move(sdfg_and_node.first);
+    auto* node = sdfg_and_node.second;
+
+    EXPECT_TRUE(node);
+
+    EXPECT_EQ(node->toStr(), "_out[i,j] = _in[i,j] for i = 0:I for j = 0:J");
+}
+
+TEST(EinsumNode, MatrixTranspose) {
+    auto sdfg_and_node = matrix_transpose();
+    auto sdfg = std::move(sdfg_and_node.first);
+    auto* node = sdfg_and_node.second;
+
+    EXPECT_TRUE(node);
+
+    EXPECT_EQ(node->toStr(), "_out[j,i] = _in[i,j] for i = 0:I for j = 0:J");
+}
+
+TEST(EinsumNode, DotProduct) {
+    auto sdfg_and_node = dot_product();
+    auto sdfg = std::move(sdfg_and_node.first);
+    auto* node = sdfg_and_node.second;
+
+    EXPECT_TRUE(node);
+
+    EXPECT_EQ(node->toStr(), "_out[i] = _in1[i] * _in2[i] for i = 0:I");
+}
+
+TEST(EinsumNode, MatrixElementwiseMultiplication) {
+    auto sdfg_and_node = matrix_elementwise_mult();
+    auto sdfg = std::move(sdfg_and_node.first);
+    auto* node = sdfg_and_node.second;
+
+    EXPECT_TRUE(node);
+
+    EXPECT_EQ(node->toStr(),
+              "_out[i,j] = _in1[i,j] * _in2[i,j] * _in3[i,j] for i = 0:I for j = 0:J");
+}
+
+TEST(EinsumNode, VectorScaling) {
+    auto sdfg_and_node = vector_scaling();
+    auto sdfg = std::move(sdfg_and_node.first);
+    auto* node = sdfg_and_node.second;
+
+    EXPECT_TRUE(node);
+
+    EXPECT_EQ(node->toStr(), "_out[i] = _in1[i] * _in2 * _in3 * _in4 for i = 0:I");
+}
