@@ -22,8 +22,11 @@ inline std::pair<std::unique_ptr<StructuredSDFG>, einsum::EinsumNode*> matrix_ma
     builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
 
     types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    builder.add_container("i", sym_desc);
     builder.add_container("I", sym_desc, true);
+    builder.add_container("j", sym_desc);
     builder.add_container("J", sym_desc, true);
+    builder.add_container("k", sym_desc);
     builder.add_container("K", sym_desc, true);
 
     types::Scalar base_desc(types::PrimitiveType::Float);
@@ -58,11 +61,17 @@ inline std::pair<std::unique_ptr<StructuredSDFG>, einsum::EinsumNode*> tensor_co
     builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
 
     types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    builder.add_container("i", sym_desc);
     builder.add_container("I", sym_desc, true);
+    builder.add_container("j", sym_desc);
     builder.add_container("J", sym_desc, true);
+    builder.add_container("k", sym_desc);
     builder.add_container("K", sym_desc, true);
+    builder.add_container("l", sym_desc);
     builder.add_container("L", sym_desc, true);
+    builder.add_container("m", sym_desc);
     builder.add_container("M", sym_desc, true);
+    builder.add_container("n", sym_desc);
     builder.add_container("N", sym_desc, true);
 
     types::Scalar base_desc(types::PrimitiveType::Float);
@@ -105,7 +114,9 @@ inline std::pair<std::unique_ptr<StructuredSDFG>, einsum::EinsumNode*> matrix_ve
     builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
 
     types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    builder.add_container("i", sym_desc);
     builder.add_container("I", sym_desc, true);
+    builder.add_container("j", sym_desc);
     builder.add_container("J", sym_desc, true);
 
     types::Scalar base_desc(types::PrimitiveType::Float);
@@ -139,6 +150,7 @@ inline std::pair<std::unique_ptr<StructuredSDFG>, einsum::EinsumNode*> diagonal_
     builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
 
     types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    builder.add_container("i", sym_desc);
     builder.add_container("I", sym_desc, true);
 
     types::Scalar base_desc(types::PrimitiveType::Float);
@@ -167,6 +179,7 @@ inline std::pair<std::unique_ptr<StructuredSDFG>, einsum::EinsumNode*> matrix_tr
     builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
 
     types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    builder.add_container("i", sym_desc);
     builder.add_container("I", sym_desc, true);
 
     types::Scalar base_desc(types::PrimitiveType::Float);
@@ -195,7 +208,9 @@ inline std::pair<std::unique_ptr<StructuredSDFG>, einsum::EinsumNode*> matrix_co
     builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
 
     types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    builder.add_container("i", sym_desc);
     builder.add_container("I", sym_desc, true);
+    builder.add_container("j", sym_desc);
     builder.add_container("J", sym_desc, true);
 
     types::Scalar base_desc(types::PrimitiveType::Float);
@@ -226,7 +241,9 @@ inline std::pair<std::unique_ptr<StructuredSDFG>, einsum::EinsumNode*> matrix_tr
     builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
 
     types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    builder.add_container("i", sym_desc);
     builder.add_container("I", sym_desc, true);
+    builder.add_container("j", sym_desc);
     builder.add_container("J", sym_desc, true);
 
     types::Scalar base_desc(types::PrimitiveType::Float);
@@ -257,6 +274,7 @@ inline std::pair<std::unique_ptr<StructuredSDFG>, einsum::EinsumNode*> dot_produ
     builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
 
     types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    builder.add_container("i", sym_desc);
     builder.add_container("I", sym_desc, true);
 
     types::Scalar base_desc(types::PrimitiveType::Float);
@@ -275,7 +293,7 @@ inline std::pair<std::unique_ptr<StructuredSDFG>, einsum::EinsumNode*> dot_produ
                                  std::vector<std::pair<symbolic::Symbol, symbolic::Expression>>,
                                  std::vector<std::string>, std::vector<std::vector<std::string>>>(
             block, einsum::LibraryNodeType_Einsum, {"_out"}, {"_in1", "_in2"}, false, DebugInfo(),
-            {{symbolic::symbol("i"), symbolic::symbol("I")}}, {"i"}, {{"i"}, {"i"}});
+            {{symbolic::symbol("i"), symbolic::symbol("I")}}, {}, {{"i"}, {"i"}});
     builder.add_memlet(block, a, "void", libnode, "_in1", {});
     builder.add_memlet(block, b, "void", libnode, "_in2", {});
     builder.add_memlet(block, libnode, "_out", c, "void", {});
@@ -287,7 +305,9 @@ inline std::pair<std::unique_ptr<StructuredSDFG>, einsum::EinsumNode*> matrix_el
     builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
 
     types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    builder.add_container("i", sym_desc);
     builder.add_container("I", sym_desc, true);
+    builder.add_container("j", sym_desc);
     builder.add_container("J", sym_desc, true);
 
     types::Scalar base_desc(types::PrimitiveType::Float);
@@ -325,14 +345,15 @@ inline std::pair<std::unique_ptr<StructuredSDFG>, einsum::EinsumNode*> vector_sc
     builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
 
     types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    builder.add_container("i", sym_desc);
     builder.add_container("I", sym_desc, true);
 
     types::Scalar base_desc(types::PrimitiveType::Float);
     types::Pointer desc(base_desc);
     builder.add_container("a", desc, true);
-    builder.add_container("b", desc, true);
-    builder.add_container("c", desc, true);
-    builder.add_container("d", desc, true);
+    builder.add_container("b", base_desc, true);
+    builder.add_container("c", base_desc, true);
+    builder.add_container("d", base_desc, true);
     builder.add_container("e", desc, true);
 
     auto& root = builder.subject().root();

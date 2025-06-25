@@ -16,24 +16,27 @@ TEST(EinsumDispatcher, MatrixMatrixMultiplication) {
     EXPECT_EQ(generator.function_definition(),
               "extern void sdfg_1(unsigned long long I, unsigned long long J, unsigned long long "
               "K, float **A, float **B, float **C)");
-    EXPECT_EQ(generator.main().str(), R"(    {
+    EXPECT_EQ(generator.main().str(), R"(unsigned long long k;
+unsigned long long j;
+unsigned long long i;
+    {
         float **_in1 = A;
         float **_in2 = B;
-        float **_out;
 
         for (i = 0; i < I; i++)
         {
             for (k = 0; k < K; k++)
             {
-                _out[i][k] = 0.0f;
+                float _out = 0.0f;
+
                 for (j = 0; j < J; j++)
                 {
-                    _out[i][k] = _out[i][k] + _in1[i][j] * _in2[j][k];
+                    _out = _out + _in1[i][j] * _in2[j][k];
                 }
+
+                C[i][k] = _out;
             }
         }
-
-        C = _out;
     }
 )");
 }
@@ -52,11 +55,16 @@ TEST(EinsumDispatcher, TensorContraction3D) {
               "extern void sdfg_1(unsigned long long I, unsigned long long J, unsigned long long "
               "K, unsigned long long L, unsigned long long M, unsigned long long N, float ***A, "
               "float ***B, float ***C, float ***D)");
-    EXPECT_EQ(generator.main().str(), R"(    {
+    EXPECT_EQ(generator.main().str(), R"(unsigned long long i;
+unsigned long long j;
+unsigned long long l;
+unsigned long long n;
+unsigned long long k;
+unsigned long long m;
+    {
         float ***_in1 = A;
         float ***_in2 = B;
         float ***_in3 = C;
-        float ***_out;
 
         for (i = 0; i < I; i++)
         {
@@ -64,22 +72,23 @@ TEST(EinsumDispatcher, TensorContraction3D) {
             {
                 for (k = 0; k < K; k++)
                 {
-                    _out[i][j][k] = 0.0f;
+                    float _out = 0.0f;
+
                     for (l = 0; l < L; l++)
                     {
                         for (m = 0; m < M; m++)
                         {
                             for (n = 0; n < N; n++)
                             {
-                                _out[i][j][k] = _out[i][j][k] + _in1[l][j][m] * _in2[i][l][n] * _in3[n][m][k];
+                                _out = _out + _in1[l][j][m] * _in2[i][l][n] * _in3[n][m][k];
                             }
                         }
                     }
+
+                    D[i][j][k] = _out;
                 }
             }
         }
-
-        D = _out;
     }
 )");
 }
@@ -97,21 +106,23 @@ TEST(EinsumDispatcher, MatrixVectorMultiplication) {
     EXPECT_EQ(generator.function_definition(),
               "extern void sdfg_1(unsigned long long I, unsigned long long J, float **A, float *b, "
               "float *c)");
-    EXPECT_EQ(generator.main().str(), R"(    {
+    EXPECT_EQ(generator.main().str(), R"(unsigned long long j;
+unsigned long long i;
+    {
         float **_in1 = A;
         float *_in2 = b;
-        float *_out;
 
         for (i = 0; i < I; i++)
         {
-            _out[i] = 0.0f;
+            float _out = 0.0f;
+
             for (j = 0; j < J; j++)
             {
-                _out[i] = _out[i] + _in1[i][j] * _in2[j];
+                _out = _out + _in1[i][j] * _in2[j];
             }
-        }
 
-        c = _out;
+            c[i] = _out;
+        }
     }
 )");
 }
@@ -128,17 +139,18 @@ TEST(EinsumDispatcher, DiagonalExtraction) {
 
     EXPECT_EQ(generator.function_definition(),
               "extern void sdfg_1(unsigned long long I, float **A, float *b)");
-    EXPECT_EQ(generator.main().str(), R"(    {
+    EXPECT_EQ(generator.main().str(), R"(unsigned long long i;
+    {
         float **_in = A;
-        float *_out;
 
         for (i = 0; i < I; i++)
         {
-            _out[i] = 0.0f;
-            _out[i] = _out[i] + _in[i][i];
-        }
+            float _out = 0.0f;
 
-        b = _out;
+            _out = _out + _in[i][i];
+
+            b[i] = _out;
+        }
     }
 )");
 }
@@ -155,17 +167,18 @@ TEST(EinsumDispatcher, MatrixTrace) {
 
     EXPECT_EQ(generator.function_definition(),
               "extern void sdfg_1(unsigned long long I, float **A, float *b)");
-    EXPECT_EQ(generator.main().str(), R"(    {
+    EXPECT_EQ(generator.main().str(), R"(unsigned long long i;
+    {
         float **_in = A;
-        float *_out;
 
-        *_out = 0.0f;
+        float _out = 0.0f;
+
         for (i = 0; i < I; i++)
         {
-            *_out = *_out + _in[i][i];
+            _out = _out + _in[i][i];
         }
 
-        b = _out;
+        *b = _out;
     }
 )");
 }
@@ -180,22 +193,25 @@ TEST(EinsumDispatcher, MatrixCopy) {
     codegen::CCodeGenerator generator(*sdfg);
     EXPECT_TRUE(generator.generate());
 
-    EXPECT_EQ(generator.function_definition(),
-              "extern void sdfg_1(unsigned long long I, unsigned long long J, float **A, float **B)");
-    EXPECT_EQ(generator.main().str(), R"(    {
+    EXPECT_EQ(
+        generator.function_definition(),
+        "extern void sdfg_1(unsigned long long I, unsigned long long J, float **A, float **B)");
+    EXPECT_EQ(generator.main().str(), R"(unsigned long long j;
+unsigned long long i;
+    {
         float **_in = A;
-        float **_out;
 
         for (i = 0; i < I; i++)
         {
             for (j = 0; j < J; j++)
             {
-                _out[i][j] = 0.0f;
-                _out[i][j] = _out[i][j] + _in[i][j];
+                float _out = 0.0f;
+
+                _out = _out + _in[i][j];
+
+                B[i][j] = _out;
             }
         }
-
-        B = _out;
     }
 )");
 }
@@ -210,22 +226,25 @@ TEST(EinsumDispatcher, MatrixTranspose) {
     codegen::CCodeGenerator generator(*sdfg);
     EXPECT_TRUE(generator.generate());
 
-    EXPECT_EQ(generator.function_definition(),
-              "extern void sdfg_1(unsigned long long I, unsigned long long J, float **A, float **B)");
-    EXPECT_EQ(generator.main().str(), R"(    {
+    EXPECT_EQ(
+        generator.function_definition(),
+        "extern void sdfg_1(unsigned long long I, unsigned long long J, float **A, float **B)");
+    EXPECT_EQ(generator.main().str(), R"(unsigned long long j;
+unsigned long long i;
+    {
         float **_in = A;
-        float **_out;
 
         for (j = 0; j < J; j++)
         {
             for (i = 0; i < I; i++)
             {
-                _out[j][i] = 0.0f;
-                _out[j][i] = _out[j][i] + _in[i][j];
+                float _out = 0.0f;
+
+                _out = _out + _in[i][j];
+
+                B[j][i] = _out;
             }
         }
-
-        B = _out;
     }
 )");
 }
@@ -242,18 +261,19 @@ TEST(EinsumDispatcher, DotProduct) {
 
     EXPECT_EQ(generator.function_definition(),
               "extern void sdfg_1(unsigned long long I, float *a, float *b, float *c)");
-    EXPECT_EQ(generator.main().str(), R"(    {
+    EXPECT_EQ(generator.main().str(), R"(unsigned long long i;
+    {
         float *_in1 = a;
         float *_in2 = b;
-        float *_out;
+
+        float _out = 0.0f;
 
         for (i = 0; i < I; i++)
         {
-            _out[i] = 0.0f;
-            _out[i] = _out[i] + _in1[i] * _in2[i];
+            _out = _out + _in1[i] * _in2[i];
         }
 
-        c = _out;
+        *c = _out;
     }
 )");
 }
@@ -269,23 +289,26 @@ TEST(EinsumDispatcher, MatrixElementwiseMultiplication) {
     EXPECT_TRUE(generator.generate());
 
     EXPECT_EQ(generator.function_definition(),
-              "extern void sdfg_1(unsigned long long I, unsigned long long J, float **A, float **B, float **C, float **D)");
-    EXPECT_EQ(generator.main().str(), R"(    {
+              "extern void sdfg_1(unsigned long long I, unsigned long long J, float **A, float "
+              "**B, float **C, float **D)");
+    EXPECT_EQ(generator.main().str(), R"(unsigned long long j;
+unsigned long long i;
+    {
         float **_in1 = A;
         float **_in2 = B;
         float **_in3 = C;
-        float **_out;
 
         for (i = 0; i < I; i++)
         {
             for (j = 0; j < J; j++)
             {
-                _out[i][j] = 0.0f;
-                _out[i][j] = _out[i][j] + _in1[i][j] * _in2[i][j] * _in3[i][j];
+                float _out = 0.0f;
+
+                _out = _out + _in1[i][j] * _in2[i][j] * _in3[i][j];
+
+                D[i][j] = _out;
             }
         }
-
-        D = _out;
     }
 )");
 }
@@ -301,21 +324,23 @@ TEST(EinsumDispatcher, VectorScaling) {
     EXPECT_TRUE(generator.generate());
 
     EXPECT_EQ(generator.function_definition(),
-              "extern void sdfg_1(unsigned long long I, float *a, float *b, float *c, float *d, float *e)");
-    EXPECT_EQ(generator.main().str(), R"(    {
+              "extern void sdfg_1(unsigned long long I, float *a, float b, float c, float d, "
+              "float *e)");
+    EXPECT_EQ(generator.main().str(), R"(unsigned long long i;
+    {
         float *_in1 = a;
-        float *_in2 = b;
-        float *_in3 = c;
-        float *_in4 = d;
-        float *_out;
+        float _in2 = b;
+        float _in3 = c;
+        float _in4 = d;
 
         for (i = 0; i < I; i++)
         {
-            _out[i] = 0.0f;
-            _out[i] = _out[i] + _in1[i] * *_in2 * *_in3 * *_in4;
-        }
+            float _out = 0.0f;
 
-        e = _out;
+            _out = _out + _in1[i] * _in2 * _in3 * _in4;
+
+            e[i] = _out;
+        }
     }
 )");
 }

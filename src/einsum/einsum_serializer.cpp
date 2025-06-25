@@ -71,7 +71,7 @@ data_flow::LibraryNode& EinsumSerializer::deserialize(
         throw std::runtime_error("Invalid library node type");
     }
 
-    auto code = j["code"].get<std::string_view>();
+    auto code = j["code"].get<std::string>();
     if (code != LibraryNodeType_Einsum.value()) {
         throw std::runtime_error("Invalid library node code");
     }

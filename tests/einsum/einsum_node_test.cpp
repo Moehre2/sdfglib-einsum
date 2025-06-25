@@ -86,7 +86,7 @@ TEST(EinsumNode, DotProduct) {
 
     EXPECT_TRUE(node);
 
-    EXPECT_EQ(node->toStr(), "_out[i] = _in1[i] * _in2[i] for i = 0:I");
+    EXPECT_EQ(node->toStr(), "_out = _in1[i] * _in2[i] for i = 0:I");
 }
 
 TEST(EinsumNode, MatrixElementwiseMultiplication) {
