@@ -2,8 +2,8 @@
 
 #include <algorithm>
 #include <iostream>
-#include <sstream>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -21,22 +21,6 @@
 namespace sdfg {
 namespace einsum {
 
-std::string EinsumDispatcher::containerSubset(const std::string& container,
-                                              const std::vector<std::string>& indices) const {
-    std::stringstream stream;
-
-    if (indices.size() > 0) {
-        stream << container;
-        for (auto& index : indices) {
-            stream << "[" << index << "]";
-        }
-    } else {
-        stream << "*" << container;
-    }
-
-    return stream.str();
-}
-
 EinsumDispatcher::EinsumDispatcher(codegen::LanguageExtension& language_extension,
                                    const Function& function,
                                    const data_flow::DataFlowGraph& data_flow_graph,
@@ -47,7 +31,9 @@ void EinsumDispatcher::dispatch(codegen::PrettyPrinter& stream) {
     stream << "{" << std::endl;
     stream.setIndent(stream.indent() + 4);
 
-    // Connector declarations
+    std::unordered_map<std::string, const types::IType&> src_types;
+
+    // Input connector declarations
     for (auto& iedge : this->data_flow_graph_.in_edges(this->node_)) {
         auto& src = dynamic_cast<const data_flow::AccessNode&>(iedge.src());
         const types::IType& src_type = this->function_.type(src.data());
@@ -55,25 +41,19 @@ void EinsumDispatcher::dispatch(codegen::PrettyPrinter& stream) {
         auto& conn_name = iedge.dst_conn();
         auto& conn_type = types::infer_type(function_, src_type, iedge.subset());
 
+        src_types.insert({conn_name, src_type});
+
         stream << this->language_extension_.declaration(conn_name, conn_type);
 
         stream << " = " << src.data()
                << this->language_extension_.subset(function_, src_type, iedge.subset()) << ";"
                << std::endl;
     }
-    for (auto& oedge : this->data_flow_graph_.out_edges(this->node_)) {
-        auto& dst = dynamic_cast<const data_flow::AccessNode&>(oedge.dst());
-        const types::IType& dst_type = this->function_.type(dst.data());
-
-        auto& conn_name = oedge.src_conn();
-        auto& conn_type = types::infer_type(function_, dst_type, oedge.subset());
-        stream << this->language_extension_.declaration(conn_name, conn_type) << ";" << std::endl;
-    }
 
     stream << std::endl;
 
     const EinsumNode* einsum_node = dynamic_cast<const EinsumNode*>(&this->node_);
-    size_t nested = 0;
+    size_t outer_maps = 0, inner_maps = 0;
 
     // Create outer maps as for loops
     for (std::string out_index : einsum_node->out_indices()) {
@@ -84,19 +64,29 @@ void EinsumDispatcher::dispatch(codegen::PrettyPrinter& stream) {
                    << map.first->get_name() << "++)" << std::endl
                    << "{" << std::endl;
             stream.setIndent(stream.indent() + 4);
-            ++nested;
+            ++outer_maps;
         }
     }
 
-    // Set out container entry to 0
-    stream << this->containerSubset(einsum_node->output(0), einsum_node->out_indices()) << " = ";
-    auto& memlet = *this->data_flow_graph_.out_edges(this->node_).begin();
-    auto& out_container_type = types::infer_type(
-        this->function_,
-        this->function_.type(dynamic_cast<const data_flow::AccessNode&>(memlet.dst()).data()),
-        memlet.subset());
-    stream << this->language_extension_.zero(out_container_type.primitive_type()) << ";"
+    // Set output connector to 0
+    auto& oedge = *this->data_flow_graph_.out_edges(this->node_).begin();
+    auto& dst = dynamic_cast<const data_flow::AccessNode&>(oedge.dst());
+    const types::IType& dst_type = this->function_.type(dst.data());
+
+    auto& conn_name = oedge.src_conn();
+    data_flow::Subset conn_subset(oedge.subset());
+    for (std::string out_index : einsum_node->out_indices())
+        conn_subset.push_back(symbolic::symbol(out_index));
+    auto& conn_type = types::infer_type(function_, dst_type, conn_subset);
+    if (dynamic_cast<const types::Pointer*>(&conn_type))
+        stream << this->language_extension_.declaration(conn_name,
+                                                        types::Scalar(conn_type.primitive_type()));
+    else
+        stream << this->language_extension_.declaration(conn_name, conn_type);
+    stream << " = " << this->language_extension_.zero(conn_type.primitive_type()) << ";"
            << std::endl;
+
+    stream << std::endl;
 
     // Create inner maps as for loops
     for (const std::pair<symbolic::Symbol, symbolic::Expression>& map : einsum_node->maps()) {
@@ -108,34 +98,52 @@ void EinsumDispatcher::dispatch(codegen::PrettyPrinter& stream) {
                << "++)" << std::endl
                << "{" << std::endl;
         stream.setIndent(stream.indent() + 4);
-        ++nested;
+        ++inner_maps;
     }
 
     // Calculate one entry
-    stream << this->containerSubset(einsum_node->output(0), einsum_node->out_indices()) << " = "
-           << this->containerSubset(einsum_node->output(0), einsum_node->out_indices()) << " + ";
+    stream << einsum_node->output(0) << " = " << einsum_node->output(0) << " + ";
     for (size_t i = 0; i < einsum_node->inputs().size(); ++i) {
         if (i > 0) stream << " * ";
-        stream << this->containerSubset(einsum_node->input(i), einsum_node->in_indices(i));
+        // stream << this->containerSubset(einsum_node->input(i), einsum_node->in_indices(i));
+        if (einsum_node->in_indices(i).size() > 0) {
+            stream << einsum_node->input(i);
+            data_flow::Subset subset;
+            for (std::string in_index : einsum_node->in_indices(i))
+                subset.push_back(symbolic::symbol(in_index));
+            stream << this->language_extension_.subset(this->function_,
+                                                       src_types.at(einsum_node->input(i)), subset);
+        } else {
+            if (dynamic_cast<const types::Pointer*>(&src_types.at(einsum_node->input(i))))
+                stream << "*";
+            stream << einsum_node->input(i);
+        }
     }
     stream << ";" << std::endl;
 
-    // Closing brackets
-    for (size_t i = 0; i < nested; ++i) {
+    // Closing brackets for inner maps
+    for (size_t i = 0; i < inner_maps; ++i) {
         stream.setIndent(stream.indent() - 4);
         stream << "}" << std::endl;
     }
 
     stream << std::endl;
 
-    // Write back
-    for (auto& oedge : this->data_flow_graph_.out_edges(this->node_)) {
-        auto& dst = dynamic_cast<const data_flow::AccessNode&>(oedge.dst());
-        const types::IType& type = this->function_.type(dst.data());
-        stream << dst.data() << this->language_extension_.subset(function_, type, oedge.subset())
-               << " = ";
-        stream << oedge.src_conn();
-        stream << ";" << std::endl;
+    // Write back output connector
+    std::string dummy_declaration = this->language_extension_.declaration(dst.data(), conn_type);
+    std::string dummy_primitive_type =
+        this->language_extension_.primitive_type(conn_type.primitive_type());
+    if (dummy_primitive_type.size() + dst.data().size() + 1 >= dummy_declaration.size())
+        stream << dst.data();
+    else
+        stream << dummy_declaration.substr(dummy_primitive_type.size() + 1);
+    stream << this->language_extension_.subset(this->function_, dst_type, conn_subset) << " = "
+           << oedge.src_conn() << ";" << std::endl;
+
+    // Closing brackets for outer maps
+    for (size_t i = 0; i < outer_maps; ++i) {
+        stream.setIndent(stream.indent() - 4);
+        stream << "}" << std::endl;
     }
 
     stream.setIndent(stream.indent() - 4);

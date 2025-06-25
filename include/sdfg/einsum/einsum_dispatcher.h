@@ -12,10 +12,6 @@ namespace sdfg {
 namespace einsum {
 
 class EinsumDispatcher : public codegen::LibraryNodeDispatcher {
-   private:
-    std::string containerSubset(const std::string& container,
-                                const std::vector<std::string>& indices) const;
-
    public:
     EinsumDispatcher(codegen::LanguageExtension& language_extension, const Function& function,
                      const data_flow::DataFlowGraph& data_flow_graph,

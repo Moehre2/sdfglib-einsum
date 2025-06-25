@@ -10,7 +10,7 @@
 namespace sdfg {
 namespace einsum {
 
-inline constexpr data_flow::LibraryNodeCode LibraryNodeType_Einsum("Einsum");
+inline data_flow::LibraryNodeCode LibraryNodeType_Einsum("Einsum");
 
 /**
  * @brief Einsum node
