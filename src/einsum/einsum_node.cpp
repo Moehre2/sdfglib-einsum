@@ -1,16 +1,17 @@
 #include "sdfg/einsum/einsum_node.h"
 
+#include <sdfg/data_flow/data_flow_graph.h>
+#include <sdfg/data_flow/library_node.h>
+#include <sdfg/data_flow/memlet.h>
+#include <sdfg/element.h>
+#include <sdfg/exceptions.h>
+#include <sdfg/graph/graph.h>
+#include <sdfg/symbolic/symbolic.h>
+
 #include <sstream>
 #include <string>
 #include <utility>
 #include <vector>
-
-#include "sdfg/data_flow/data_flow_graph.h"
-#include "sdfg/data_flow/library_node.h"
-#include "sdfg/element.h"
-#include "sdfg/exceptions.h"
-#include "sdfg/graph/graph.h"
-#include "sdfg/symbolic/symbolic.h"
 
 namespace sdfg {
 namespace einsum {
@@ -20,8 +21,8 @@ EinsumNode::EinsumNode(size_t element_id, const DebugInfo& debug_info, const gra
                        const std::vector<std::string>& outputs,
                        const std::vector<std::string>& inputs, const bool side_effect,
                        const std::vector<std::pair<symbolic::Symbol, symbolic::Expression>>& maps,
-                       const std::vector<std::string>& out_indices,
-                       const std::vector<std::vector<std::string>>& in_indices)
+                       const data_flow::Subset& out_indices,
+                       const std::vector<data_flow::Subset>& in_indices)
     : data_flow::LibraryNode(element_id, debug_info, vertex, parent, code, outputs, inputs,
                              side_effect),
       maps_(maps),
@@ -37,32 +38,26 @@ EinsumNode::EinsumNode(size_t element_id, const DebugInfo& debug_info, const gra
         throw InvalidSDFGException("Number of input containers != number of input indices");
     }
 
-    // Check if einsum indices are map indices
-    bool missing = true;
-    for (auto& indices : in_indices) {
-        for (auto& index : indices) {
-            missing = true;
-            for (auto& map : maps) {
-                if (index == map.first->get_name()) {
-                    missing = false;
-                    break;
-                }
-            }
-            if (missing) {
-                throw InvalidSDFGException("Einsum index " + index + " not found in map indices");
-            }
-        }
-    }
-    for (auto& index : out_indices) {
-        missing = true;
-        for (auto& map : maps) {
-            if (index == map.first->get_name()) {
-                missing = false;
+    // Check if map indices occur at least once as in/out indices
+    for (auto& map : maps) {
+        bool unused = true;
+        for (auto& index : out_indices) {
+            if (map.first->__str__() == index->__str__()) {
+                unused = false;
                 break;
             }
         }
-        if (missing) {
-            throw InvalidSDFGException("Einsum index " + index + " not found in map indices");
+        for (auto& indices : in_indices) {
+            for (auto& index : indices) {
+                if (map.first->__str__() == index->__str__()) {
+                    unused = false;
+                    break;
+                }
+            }
+        }
+        if (unused) {
+            throw InvalidSDFGException("Einsum indvar " + map.first->__str__() +
+                                       " does not occur at least once in in/out indices.");
         }
     }
 
@@ -85,19 +80,19 @@ const symbolic::Expression& EinsumNode::num_iteration(size_t index) const {
     return this->maps_[index].second;
 }
 
-const std::vector<std::string>& EinsumNode::out_indices() const { return this->out_indices_; }
+const data_flow::Subset& EinsumNode::out_indices() const { return this->out_indices_; }
 
-const std::string& EinsumNode::out_index(size_t index) const { return this->out_indices_[index]; }
-
-const std::vector<std::vector<std::string>>& EinsumNode::in_indices() const {
-    return this->in_indices_;
+const symbolic::Expression& EinsumNode::out_index(size_t index) const {
+    return this->out_indices_[index];
 }
 
-const std::vector<std::string>& EinsumNode::in_indices(size_t index) const {
+const std::vector<data_flow::Subset>& EinsumNode::in_indices() const { return this->in_indices_; }
+
+const data_flow::Subset& EinsumNode::in_indices(size_t index) const {
     return this->in_indices_[index];
 }
 
-const std::string& EinsumNode::in_index(size_t index1, size_t index2) const {
+const symbolic::Expression& EinsumNode::in_index(size_t index1, size_t index2) const {
     return this->in_indices_[index1][index2];
 }
 
@@ -127,7 +122,7 @@ std::string EinsumNode::toStr() const {
         stream << "[";
         for (size_t i = 0; i < this->out_indices_.size(); ++i) {
             if (i > 0) stream << ",";
-            stream << this->out_indices_[i];
+            stream << this->out_indices_[i]->__str__();
         }
         stream << "]";
     }
@@ -139,7 +134,7 @@ std::string EinsumNode::toStr() const {
             stream << "[";
             for (size_t j = 0; j < this->in_indices_[i].size(); j++) {
                 if (j > 0) stream << ",";
-                stream << this->in_indices_[i][j];
+                stream << this->in_indices_[i][j]->__str__();
             }
             stream << "]";
         }

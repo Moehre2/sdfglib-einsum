@@ -1,11 +1,12 @@
 #pragma once
 
+#include <sdfg/serializer/json_serializer.h>
+#include <sdfg/serializer/library_node_serializer_registry.h>
+#include <sdfg/symbolic/symbolic.h>
+
 #include <string>
 
 #include "sdfg/einsum/einsum_node.h"
-#include "sdfg/serializer/json_serializer.h"
-#include "sdfg/serializer/library_node_serializer_registry.h"
-#include "sdfg/symbolic/symbolic.h"
 
 namespace sdfg {
 namespace einsum {

@@ -1,22 +1,23 @@
 #include "sdfg/einsum/einsum_dispatcher.h"
 
-#include <algorithm>
+#include <sdfg/codegen/language_extension.h>
+#include <sdfg/codegen/utils.h>
+#include <sdfg/data_flow/access_node.h>
+#include <sdfg/data_flow/data_flow_graph.h>
+#include <sdfg/data_flow/library_node.h>
+#include <sdfg/data_flow/memlet.h>
+#include <sdfg/function.h>
+#include <sdfg/symbolic/symbolic.h>
+#include <sdfg/types/type.h>
+#include <sdfg/types/utils.h>
+
 #include <iostream>
 #include <string>
 #include <unordered_map>
 #include <utility>
 #include <vector>
 
-#include "sdfg/codegen/language_extension.h"
-#include "sdfg/codegen/utils.h"
-#include "sdfg/data_flow/access_node.h"
-#include "sdfg/data_flow/data_flow_graph.h"
-#include "sdfg/data_flow/library_node.h"
-#include "sdfg/data_flow/memlet.h"
-#include "sdfg/function.h"
-#include "sdfg/symbolic/symbolic.h"
-#include "sdfg/types/type.h"
-#include "sdfg/types/utils.h"
+#include "sdfg/einsum/einsum_node.h"
 
 namespace sdfg {
 namespace einsum {
@@ -56,9 +57,9 @@ void EinsumDispatcher::dispatch(codegen::PrettyPrinter& stream) {
     size_t outer_maps = 0, inner_maps = 0;
 
     // Create outer maps as for loops
-    for (std::string out_index : einsum_node->out_indices()) {
+    for (const symbolic::Expression& out_index : einsum_node->out_indices()) {
         for (const std::pair<symbolic::Symbol, symbolic::Expression>& map : einsum_node->maps()) {
-            if (map.first->get_name() != out_index) continue;
+            if (map.first->__str__() != out_index->__str__()) continue;
             stream << "for (" << map.first->get_name() << " = 0; " << map.first->get_name() << " < "
                    << this->language_extension_.expression(map.second) << "; "
                    << map.first->get_name() << "++)" << std::endl
@@ -74,10 +75,7 @@ void EinsumDispatcher::dispatch(codegen::PrettyPrinter& stream) {
     const types::IType& dst_type = this->function_.type(dst.data());
 
     auto& conn_name = oedge.src_conn();
-    data_flow::Subset conn_subset(oedge.subset());
-    for (std::string out_index : einsum_node->out_indices())
-        conn_subset.push_back(symbolic::symbol(out_index));
-    auto& conn_type = types::infer_type(function_, dst_type, conn_subset);
+    auto& conn_type = types::infer_type(function_, dst_type, einsum_node->out_indices());
     if (dynamic_cast<const types::Pointer*>(&conn_type))
         stream << this->language_extension_.declaration(conn_name,
                                                         types::Scalar(conn_type.primitive_type()));
@@ -90,9 +88,14 @@ void EinsumDispatcher::dispatch(codegen::PrettyPrinter& stream) {
 
     // Create inner maps as for loops
     for (const std::pair<symbolic::Symbol, symbolic::Expression>& map : einsum_node->maps()) {
-        if (std::find(einsum_node->out_indices().begin(), einsum_node->out_indices().end(),
-                      map.first->get_name()) != einsum_node->out_indices().end())
-            continue;
+        bool outer = false;
+        for (const symbolic::Expression& out_index : einsum_node->out_indices()) {
+            if (map.first->__str__() == out_index->__str__()) {
+                outer = true;
+                break;
+            }
+        }
+        if (outer) continue;
         stream << "for (" << map.first->get_name() << " = 0; " << map.first->get_name() << " < "
                << this->language_extension_.expression(map.second) << "; " << map.first->get_name()
                << "++)" << std::endl
@@ -105,14 +108,10 @@ void EinsumDispatcher::dispatch(codegen::PrettyPrinter& stream) {
     stream << einsum_node->output(0) << " = " << einsum_node->output(0) << " + ";
     for (size_t i = 0; i < einsum_node->inputs().size(); ++i) {
         if (i > 0) stream << " * ";
-        // stream << this->containerSubset(einsum_node->input(i), einsum_node->in_indices(i));
         if (einsum_node->in_indices(i).size() > 0) {
             stream << einsum_node->input(i);
-            data_flow::Subset subset;
-            for (std::string in_index : einsum_node->in_indices(i))
-                subset.push_back(symbolic::symbol(in_index));
-            stream << this->language_extension_.subset(this->function_,
-                                                       src_types.at(einsum_node->input(i)), subset);
+            stream << this->language_extension_.subset(
+                this->function_, src_types.at(einsum_node->input(i)), einsum_node->in_indices(i));
         } else {
             if (dynamic_cast<const types::Pointer*>(&src_types.at(einsum_node->input(i))))
                 stream << "*";
@@ -137,8 +136,9 @@ void EinsumDispatcher::dispatch(codegen::PrettyPrinter& stream) {
         stream << dst.data();
     else
         stream << dummy_declaration.substr(dummy_primitive_type.size() + 1);
-    stream << this->language_extension_.subset(this->function_, dst_type, conn_subset) << " = "
-           << oedge.src_conn() << ";" << std::endl;
+    stream << this->language_extension_.subset(this->function_, dst_type,
+                                               einsum_node->out_indices())
+           << " = " << oedge.src_conn() << ";" << std::endl;
 
     // Closing brackets for outer maps
     for (size_t i = 0; i < outer_maps; ++i) {

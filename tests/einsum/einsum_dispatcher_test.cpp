@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
+#include <sdfg/codegen/code_generators/c_code_generator.h>
 
 #include "fixtures/einsum.h"
-#include "sdfg/codegen/code_generators/c_code_generator.h"
 
 TEST(EinsumDispatcher, MatrixMatrixMultiplication) {
     auto sdfg_and_node = matrix_matrix_mult();
@@ -37,6 +37,160 @@ unsigned long long i;
                 C[i][k] = _out;
             }
         }
+    }
+)");
+}
+
+TEST(EinsumDispatcher, MatrixMatrixMultiplication_partial1) {
+    builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
+
+    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    builder.add_container("i", sym_desc);
+    builder.add_container("I", sym_desc, true);
+    builder.add_container("j", sym_desc);
+    builder.add_container("J", sym_desc, true);
+    builder.add_container("k", sym_desc);
+    builder.add_container("K", sym_desc, true);
+
+    types::Scalar base_desc(types::PrimitiveType::Float);
+    types::Pointer desc(base_desc);
+    types::Pointer desc2(*desc.clone());
+    builder.add_container("A", desc2, true);
+    builder.add_container("B", desc2, true);
+    builder.add_container("C", desc2, true);
+
+    auto i = symbolic::symbol("i");
+    auto j = symbolic::symbol("j");
+    auto k = symbolic::symbol("k");
+
+    auto& root = builder.subject().root();
+
+    auto& for_i = builder.add_for(root, i, symbolic::Lt(i, symbolic::symbol("I")), symbolic::zero(),
+                                  symbolic::add(i, symbolic::one()));
+    auto& body_i = for_i.root();
+
+    auto& block = builder.add_block(body_i);
+    auto& A = builder.add_access(block, "A");
+    auto& B = builder.add_access(block, "B");
+    auto& C = builder.add_access(block, "C");
+    auto& libnode =
+        builder.add_library_node<einsum::EinsumNode,
+                                 std::vector<std::pair<symbolic::Symbol, symbolic::Expression>>,
+                                 data_flow::Subset, std::vector<data_flow::Subset>>(
+            block, einsum::LibraryNodeType_Einsum, {"_out"}, {"_in1", "_in2"}, false, DebugInfo(),
+            {{j, symbolic::symbol("J")}, {k, symbolic::symbol("K")}}, {i, k}, {{i, j}, {j, k}});
+    builder.add_memlet(block, A, "void", libnode, "_in1", {});
+    builder.add_memlet(block, B, "void", libnode, "_in2", {});
+    builder.add_memlet(block, libnode, "_out", C, "void", {});
+
+    auto sdfg = builder.move();
+
+    codegen::CCodeGenerator generator(*sdfg);
+    EXPECT_TRUE(generator.generate());
+
+    EXPECT_EQ(generator.function_definition(),
+              "extern void sdfg_1(unsigned long long I, unsigned long long J, unsigned long long "
+              "K, float **A, float **B, float **C)");
+    EXPECT_EQ(generator.main().str(), R"(unsigned long long k;
+unsigned long long j;
+unsigned long long i;
+    for(i = 0;i < I;i = 1 + i)
+    {
+            {
+                float **_in1 = A;
+                float **_in2 = B;
+
+                for (k = 0; k < K; k++)
+                {
+                    float _out = 0.0f;
+
+                    for (j = 0; j < J; j++)
+                    {
+                        _out = _out + _in1[i][j] * _in2[j][k];
+                    }
+
+                    C[i][k] = _out;
+                }
+            }
+    }
+)");
+}
+
+TEST(EinsumDispatcher, MatrixMatrixMultiplication_partial2) {
+    builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
+
+    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    builder.add_container("i", sym_desc);
+    builder.add_container("I", sym_desc, true);
+    builder.add_container("j", sym_desc);
+    builder.add_container("J", sym_desc, true);
+    builder.add_container("k", sym_desc);
+    builder.add_container("K", sym_desc, true);
+
+    types::Scalar base_desc(types::PrimitiveType::Float);
+    types::Pointer desc(base_desc);
+    types::Pointer desc2(*desc.clone());
+    builder.add_container("A", desc2, true);
+    builder.add_container("B", desc2, true);
+    builder.add_container("C", desc2, true);
+
+    auto i = symbolic::symbol("i");
+    auto j = symbolic::symbol("j");
+    auto k = symbolic::symbol("k");
+
+    auto& root = builder.subject().root();
+
+    auto& for_i = builder.add_for(root, i, symbolic::Lt(i, symbolic::symbol("I")), symbolic::zero(),
+                                  symbolic::add(i, symbolic::one()));
+    auto& body_i = for_i.root();
+
+    auto& for_k = builder.add_for(body_i, k, symbolic::Lt(k, symbolic::symbol("K")),
+                                  symbolic::zero(), symbolic::add(k, symbolic::one()));
+    auto& body_k = for_k.root();
+
+    auto& block = builder.add_block(body_k);
+    auto& A = builder.add_access(block, "A");
+    auto& B = builder.add_access(block, "B");
+    auto& C = builder.add_access(block, "C");
+    auto& libnode =
+        builder.add_library_node<einsum::EinsumNode,
+                                 std::vector<std::pair<symbolic::Symbol, symbolic::Expression>>,
+                                 data_flow::Subset, std::vector<data_flow::Subset>>(
+            block, einsum::LibraryNodeType_Einsum, {"_out"}, {"_in1", "_in2"}, false, DebugInfo(),
+            {{j, symbolic::symbol("J")}}, {i, k}, {{i, j}, {j, k}});
+    builder.add_memlet(block, A, "void", libnode, "_in1", {});
+    builder.add_memlet(block, B, "void", libnode, "_in2", {});
+    builder.add_memlet(block, libnode, "_out", C, "void", {});
+
+    auto sdfg = builder.move();
+
+    codegen::CCodeGenerator generator(*sdfg);
+    EXPECT_TRUE(generator.generate());
+
+    EXPECT_EQ(generator.function_definition(),
+              "extern void sdfg_1(unsigned long long I, unsigned long long J, unsigned long long "
+              "K, float **A, float **B, float **C)");
+    EXPECT_EQ(generator.main().str(), R"(unsigned long long k;
+unsigned long long j;
+unsigned long long i;
+    for(i = 0;i < I;i = 1 + i)
+    {
+            for(k = 0;k < K;k = 1 + k)
+            {
+                    {
+                        float **_in1 = A;
+                        float **_in2 = B;
+
+                        float _out = 0.0f;
+
+                        for (j = 0; j < J; j++)
+                        {
+                            _out = _out + _in1[i][j] * _in2[j][k];
+                        }
+
+                        C[i][k] = _out;
+                    }
+            }
     }
 )");
 }
