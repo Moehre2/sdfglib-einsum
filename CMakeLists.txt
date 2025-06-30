@@ -15,6 +15,8 @@ set(SOURCE_FILES
     src/einsum/einsum_node.cpp
     src/einsum/einsum_serializer.cpp
     src/einsum/einsum_dispatcher.cpp
+    src/transformations/einsum_lift_computation.cpp
+    src/transformations/einsum_lift.cpp
 )
 
 add_library(sdfglib-einsum
