@@ -1,5 +1,7 @@
 #pragma once
 
+#include <sdfg/symbolic/symbolic.h>
+
 #include <functional>
 #include <nlohmann/json_fwd.hpp>
 #include <string>
@@ -16,13 +18,16 @@ namespace sdfg {
 namespace transformations {
 
 class EinsumLift : public Transformation {
-    data_flow::Tasklet& init_tasklet_;
     std::vector<std::reference_wrapper<structured_control_flow::StructuredLoop>> loops_;
     structured_control_flow::Block& comp_block_;
 
+    symbolic::Expression taskletCode2Expr(const data_flow::TaskletCode code,
+                                          const std::vector<symbolic::Expression>& args);
+    std::string createAccessExpr(const std::string& container, const data_flow::Subset& subset);
+    bool checkMulExpr(const symbolic::Expression expr);
+
    public:
-    EinsumLift(data_flow::Tasklet& init_tasklet,
-               std::vector<std::reference_wrapper<structured_control_flow::StructuredLoop>> loops,
+    EinsumLift(std::vector<std::reference_wrapper<structured_control_flow::StructuredLoop>> loops,
                structured_control_flow::Block& comp_block);
 
     virtual std::string name() const override;

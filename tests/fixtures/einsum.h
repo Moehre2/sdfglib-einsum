@@ -46,17 +46,20 @@ inline std::pair<std::unique_ptr<StructuredSDFG>, einsum::EinsumNode*> matrix_ma
     auto& block = builder.add_block(root);
     auto& A = builder.add_access(block, "A");
     auto& B = builder.add_access(block, "B");
-    auto& C = builder.add_access(block, "C");
+    auto& C1 = builder.add_access(block, "C");
+    auto& C2 = builder.add_access(block, "C");
     auto& libnode =
         builder.add_library_node<einsum::EinsumNode,
                                  std::vector<std::pair<symbolic::Symbol, symbolic::Expression>>,
                                  data_flow::Subset, std::vector<data_flow::Subset>>(
-            block, einsum::LibraryNodeType_Einsum, {"_out"}, {"_in1", "_in2"}, false, DebugInfo(),
+            block, einsum::LibraryNodeType_Einsum, {"_out"}, {"_out", "_in1", "_in2"}, false,
+            DebugInfo(),
             {{i, symbolic::symbol("I")}, {j, symbolic::symbol("J")}, {k, symbolic::symbol("K")}},
-            {i, k}, {{i, j}, {j, k}});
+            {i, k}, {{i, k}, {i, j}, {j, k}});
+    builder.add_memlet(block, C1, "void", libnode, "_out", {});
     builder.add_memlet(block, A, "void", libnode, "_in1", {});
     builder.add_memlet(block, B, "void", libnode, "_in2", {});
-    builder.add_memlet(block, libnode, "_out", C, "void", {});
+    builder.add_memlet(block, libnode, "_out", C2, "void", {});
 
     return std::make_pair(builder.move(), dynamic_cast<einsum::EinsumNode*>(&libnode));
 }
@@ -99,24 +102,26 @@ inline std::pair<std::unique_ptr<StructuredSDFG>, einsum::EinsumNode*> tensor_co
     auto& A = builder.add_access(block, "A");
     auto& B = builder.add_access(block, "B");
     auto& C = builder.add_access(block, "C");
-    auto& D = builder.add_access(block, "D");
+    auto& D1 = builder.add_access(block, "D");
+    auto& D2 = builder.add_access(block, "D");
     auto& libnode =
         builder.add_library_node<einsum::EinsumNode,
                                  std::vector<std::pair<symbolic::Symbol, symbolic::Expression>>,
                                  data_flow::Subset, std::vector<data_flow::Subset>>(
-            block, einsum::LibraryNodeType_Einsum, {"_out"}, {"_in1", "_in2", "_in3"}, false,
-            DebugInfo(),
+            block, einsum::LibraryNodeType_Einsum, {"_out"}, {"_out", "_in1", "_in2", "_in3"},
+            false, DebugInfo(),
             {{i, symbolic::symbol("I")},
              {j, symbolic::symbol("J")},
              {k, symbolic::symbol("K")},
              {l, symbolic::symbol("L")},
              {m, symbolic::symbol("M")},
              {n, symbolic::symbol("N")}},
-            {i, j, k}, {{l, j, m}, {i, l, n}, {n, m, k}});
+            {i, j, k}, {{i, j, k}, {l, j, m}, {i, l, n}, {n, m, k}});
+    builder.add_memlet(block, D1, "void", libnode, "_out", {});
     builder.add_memlet(block, A, "void", libnode, "_in1", {});
     builder.add_memlet(block, B, "void", libnode, "_in2", {});
     builder.add_memlet(block, C, "void", libnode, "_in3", {});
-    builder.add_memlet(block, libnode, "_out", D, "void", {});
+    builder.add_memlet(block, libnode, "_out", D2, "void", {});
 
     return std::make_pair(builder.move(), dynamic_cast<einsum::EinsumNode*>(&libnode));
 }
@@ -144,16 +149,19 @@ inline std::pair<std::unique_ptr<StructuredSDFG>, einsum::EinsumNode*> matrix_ve
     auto& block = builder.add_block(root);
     auto& A = builder.add_access(block, "A");
     auto& b = builder.add_access(block, "b");
-    auto& c = builder.add_access(block, "c");
+    auto& c1 = builder.add_access(block, "c");
+    auto& c2 = builder.add_access(block, "c");
     auto& libnode =
         builder.add_library_node<einsum::EinsumNode,
                                  std::vector<std::pair<symbolic::Symbol, symbolic::Expression>>,
                                  data_flow::Subset, std::vector<data_flow::Subset>>(
-            block, einsum::LibraryNodeType_Einsum, {"_out"}, {"_in1", "_in2"}, false, DebugInfo(),
-            {{i, symbolic::symbol("I")}, {j, symbolic::symbol("J")}}, {i}, {{i, j}, {j}});
+            block, einsum::LibraryNodeType_Einsum, {"_out"}, {"_out", "_in1", "_in2"}, false,
+            DebugInfo(), {{i, symbolic::symbol("I")}, {j, symbolic::symbol("J")}}, {i},
+            {{i}, {i, j}, {j}});
+    builder.add_memlet(block, c1, "void", libnode, "_out", {});
     builder.add_memlet(block, A, "void", libnode, "_in1", {});
     builder.add_memlet(block, b, "void", libnode, "_in2", {});
-    builder.add_memlet(block, libnode, "_out", c, "void", {});
+    builder.add_memlet(block, libnode, "_out", c2, "void", {});
 
     return std::make_pair(builder.move(), dynamic_cast<einsum::EinsumNode*>(&libnode));
 }
@@ -207,15 +215,17 @@ inline std::pair<std::unique_ptr<StructuredSDFG>, einsum::EinsumNode*> matrix_tr
     auto& root = builder.subject().root();
     auto& block = builder.add_block(root);
     auto& A = builder.add_access(block, "A");
-    auto& b = builder.add_access(block, "b");
+    auto& b1 = builder.add_access(block, "b");
+    auto& b2 = builder.add_access(block, "b");
     auto& libnode =
         builder.add_library_node<einsum::EinsumNode,
                                  std::vector<std::pair<symbolic::Symbol, symbolic::Expression>>,
                                  data_flow::Subset, std::vector<data_flow::Subset>>(
-            block, einsum::LibraryNodeType_Einsum, {"_out"}, {"_in"}, false, DebugInfo(),
-            {{i, symbolic::symbol("I")}}, {}, {{i, i}});
+            block, einsum::LibraryNodeType_Einsum, {"_out"}, {"_out", "_in"}, false, DebugInfo(),
+            {{i, symbolic::symbol("I")}}, {}, {{}, {i, i}});
+    builder.add_memlet(block, b1, "void", libnode, "_out", {});
     builder.add_memlet(block, A, "void", libnode, "_in", {});
-    builder.add_memlet(block, libnode, "_out", b, "void", {});
+    builder.add_memlet(block, libnode, "_out", b2, "void", {});
 
     return std::make_pair(builder.move(), dynamic_cast<einsum::EinsumNode*>(&libnode));
 }
@@ -307,16 +317,18 @@ inline std::pair<std::unique_ptr<StructuredSDFG>, einsum::EinsumNode*> dot_produ
     auto& block = builder.add_block(root);
     auto& a = builder.add_access(block, "a");
     auto& b = builder.add_access(block, "b");
-    auto& c = builder.add_access(block, "c");
+    auto& c1 = builder.add_access(block, "c");
+    auto& c2 = builder.add_access(block, "c");
     auto& libnode =
         builder.add_library_node<einsum::EinsumNode,
                                  std::vector<std::pair<symbolic::Symbol, symbolic::Expression>>,
                                  data_flow::Subset, std::vector<data_flow::Subset>>(
-            block, einsum::LibraryNodeType_Einsum, {"_out"}, {"_in1", "_in2"}, false, DebugInfo(),
-            {{i, symbolic::symbol("I")}}, {}, {{i}, {i}});
+            block, einsum::LibraryNodeType_Einsum, {"_out"}, {"_out", "_in1", "_in2"}, false,
+            DebugInfo(), {{i, symbolic::symbol("I")}}, {}, {{}, {i}, {i}});
+    builder.add_memlet(block, c1, "void", libnode, "_out", {});
     builder.add_memlet(block, a, "void", libnode, "_in1", {});
     builder.add_memlet(block, b, "void", libnode, "_in2", {});
-    builder.add_memlet(block, libnode, "_out", c, "void", {});
+    builder.add_memlet(block, libnode, "_out", c2, "void", {});
 
     return std::make_pair(builder.move(), dynamic_cast<einsum::EinsumNode*>(&libnode));
 }

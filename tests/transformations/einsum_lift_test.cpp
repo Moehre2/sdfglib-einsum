@@ -1,14 +1,25 @@
 #include "sdfg/transformations/einsum_lift.h"
 
 #include <gtest/gtest.h>
+#include <sdfg/analysis/analysis.h>
+#include <sdfg/builder/structured_sdfg_builder.h>
+#include <sdfg/codegen/code_generators/c_code_generator.h>
+#include <sdfg/data_flow/access_node.h>
+#include <sdfg/data_flow/library_node.h>
+#include <sdfg/data_flow/memlet.h>
+#include <sdfg/data_flow/tasklet.h>
+#include <sdfg/function.h>
+#include <sdfg/structured_control_flow/block.h>
+#include <sdfg/structured_control_flow/for.h>
+#include <sdfg/symbolic/symbolic.h>
+#include <sdfg/types/pointer.h>
+#include <sdfg/types/scalar.h>
+#include <sdfg/types/type.h>
 
-#include "sdfg/analysis/analysis.h"
-#include "sdfg/builder/structured_sdfg_builder.h"
-#include "sdfg/data_flow/tasklet.h"
-#include "sdfg/function.h"
-#include "sdfg/types/pointer.h"
-#include "sdfg/types/scalar.h"
-#include "sdfg/types/type.h"
+#include <string>
+#include <unordered_map>
+
+#include "sdfg/einsum/einsum_node.h"
 
 using namespace sdfg;
 
@@ -21,7 +32,23 @@ using namespace sdfg;
                                         symbolic::zero(), update_##index);        \
     auto& body_##index = for_##index.root();
 
-#define gen_map(index, bound, root_)
+bool subsets_eq(const data_flow::Subset& subset1, const data_flow::Subset& subset2) {
+    if (subset1.size() != subset2.size()) return false;
+    for (size_t i = 0; i < subset1.size(); ++i) {
+        if (!symbolic::eq(subset1[i], subset2[i])) return false;
+    }
+    return true;
+}
+
+std::unordered_map<std::string, std::string> get_conn2cont(
+    const structured_control_flow::Block& block, const data_flow::LibraryNode& libnode) {
+    std::unordered_map<std::string, std::string> conn2cont;
+    for (auto& iedge : block.dataflow().in_edges(libnode)) {
+        auto& src = dynamic_cast<const data_flow::AccessNode&>(iedge.src());
+        conn2cont.insert({iedge.dst_conn(), src.data()});
+    }
+    return conn2cont;
+}
 
 TEST(EinsumLift, MatrixMatrixMultiplication_1) {
     builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
@@ -56,6 +83,9 @@ TEST(EinsumLift, MatrixMatrixMultiplication_1) {
 
     gen_for(j, J, body_k);
 
+    const std::unordered_map<std::string, data_flow::Subset> subsets = {
+        {"A", {indvar_i, indvar_j}}, {"B", {indvar_j, indvar_k}}, {"C", {indvar_i, indvar_k}}};
+
     auto& block2 = builder.add_block(body_j);
     auto& A = builder.add_access(block2, "A");
     auto& B = builder.add_access(block2, "B");
@@ -64,23 +94,60 @@ TEST(EinsumLift, MatrixMatrixMultiplication_1) {
     auto& C3 = builder.add_access(block2, "C");
     auto& tasklet2 = builder.add_tasklet(block2, data_flow::TaskletCode::mul, {"_out", base_desc},
                                          {{"_in1", base_desc}, {"_in2", base_desc}});
-    builder.add_memlet(block2, A, "void", tasklet2, "_in1", {indvar_i, indvar_j});
-    builder.add_memlet(block2, B, "void", tasklet2, "_in2", {indvar_j, indvar_k});
+    builder.add_memlet(block2, A, "void", tasklet2, "_in1", subsets.at("A"));
+    builder.add_memlet(block2, B, "void", tasklet2, "_in2", subsets.at("B"));
     builder.add_memlet(block2, tasklet2, "_out", tmp, "void", {});
     auto& tasklet3 = builder.add_tasklet(block2, data_flow::TaskletCode::add, {"_out", base_desc},
                                          {{"_in1", base_desc}, {"_in2", base_desc}});
-    builder.add_memlet(block2, C2, "void", tasklet3, "_in1", {indvar_i, indvar_k});
+    builder.add_memlet(block2, C2, "void", tasklet3, "_in1", subsets.at("C"));
     builder.add_memlet(block2, tmp, "void", tasklet3, "_in2", {});
-    builder.add_memlet(block2, tasklet3, "_out", C3, "void", {indvar_i, indvar_k});
+    builder.add_memlet(block2, tasklet3, "_out", C3, "void", subsets.at("C"));
 
     auto sdfg = builder.move();
 
     builder::StructuredSDFGBuilder builder_opt(sdfg);
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
 
-    transformations::EinsumLift transformation(tasklet1, {for_j}, block2);
+    transformations::EinsumLift transformation({for_j}, block2);
     EXPECT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
     transformation.apply(builder_opt, analysis_manager);
+
+    auto& root_opt = builder_opt.subject().root();
+    EXPECT_EQ(root_opt.size(), 1);
+    auto* for_i_opt = dynamic_cast<structured_control_flow::For*>(&root_opt.at(0).first);
+    EXPECT_TRUE(for_i_opt);
+    EXPECT_EQ(for_i_opt, &for_i);
+    EXPECT_EQ(for_i_opt->root().size(), 1);
+    auto* for_k_opt = dynamic_cast<structured_control_flow::For*>(&for_i_opt->root().at(0).first);
+    EXPECT_TRUE(for_k_opt);
+    EXPECT_EQ(for_k_opt, &for_k);
+    EXPECT_EQ(for_k_opt->root().size(), 2);
+    auto* block1_opt =
+        dynamic_cast<structured_control_flow::Block*>(&for_k_opt->root().at(0).first);
+    EXPECT_TRUE(block1_opt);
+    EXPECT_EQ(block1_opt, &block1);
+    auto* block_einsum =
+        dynamic_cast<structured_control_flow::Block*>(&for_k_opt->root().at(1).first);
+    EXPECT_TRUE(block_einsum);
+    EXPECT_EQ(block_einsum->dataflow().nodes().size(), 5);
+    data_flow::LibraryNode* libnode;
+    for (auto& node : block_einsum->dataflow().nodes()) {
+        if ((libnode = dynamic_cast<data_flow::LibraryNode*>(&node))) break;
+    }
+    EXPECT_TRUE(libnode);
+    auto* einsum_node = dynamic_cast<einsum::EinsumNode*>(libnode);
+    EXPECT_TRUE(einsum_node);
+    EXPECT_EQ(einsum_node->outputs(), std::vector<std::string>({"_out"}));
+    EXPECT_EQ(einsum_node->inputs(), std::vector<std::string>({"_in0", "_in1", "_out"}));
+    EXPECT_EQ(einsum_node->maps().size(), 1);
+    EXPECT_TRUE(symbolic::eq(einsum_node->map(0).first, indvar_j));
+    EXPECT_TRUE(symbolic::eq(einsum_node->map(0).second, bound_j));
+    EXPECT_TRUE(subsets_eq(einsum_node->out_indices(), subsets.at("C")));
+    auto conn2cont = get_conn2cont(*block_einsum, *libnode);
+    EXPECT_EQ(einsum_node->in_indices().size(), 3);
+    EXPECT_TRUE(subsets_eq(einsum_node->in_indices(0), subsets.at(conn2cont.at("_in0"))));
+    EXPECT_TRUE(subsets_eq(einsum_node->in_indices(1), subsets.at(conn2cont.at("_in1"))));
+    EXPECT_TRUE(subsets_eq(einsum_node->in_indices(2), subsets.at(conn2cont.at("_out"))));
 }
 
 TEST(EinsumLift, MatrixMatrixMultiplication_2) {
@@ -115,6 +182,9 @@ TEST(EinsumLift, MatrixMatrixMultiplication_2) {
 
     gen_for(j, J, body_k);
 
+    const std::unordered_map<std::string, data_flow::Subset> subsets = {
+        {"A", {indvar_i, indvar_j}}, {"B", {indvar_j, indvar_k}}, {"C", {indvar_i, indvar_k}}};
+
     auto& block2 = builder.add_block(body_j);
     auto& A = builder.add_access(block2, "A");
     auto& B = builder.add_access(block2, "B");
@@ -123,19 +193,56 @@ TEST(EinsumLift, MatrixMatrixMultiplication_2) {
     auto& tasklet2 =
         builder.add_tasklet(block2, data_flow::TaskletCode::fma, {"_out", base_desc},
                             {{"_in1", base_desc}, {"_in2", base_desc}, {"_in3", base_desc}});
-    builder.add_memlet(block2, A, "void", tasklet2, "_in1", {indvar_i, indvar_j});
-    builder.add_memlet(block2, B, "void", tasklet2, "_in2", {indvar_j, indvar_k});
-    builder.add_memlet(block2, C2, "void", tasklet2, "_in3", {indvar_i, indvar_k});
-    builder.add_memlet(block2, tasklet2, "_out", C3, "void", {indvar_i, indvar_k});
+    builder.add_memlet(block2, A, "void", tasklet2, "_in1", subsets.at("A"));
+    builder.add_memlet(block2, B, "void", tasklet2, "_in2", subsets.at("B"));
+    builder.add_memlet(block2, C2, "void", tasklet2, "_in3", subsets.at("C"));
+    builder.add_memlet(block2, tasklet2, "_out", C3, "void", subsets.at("C"));
 
     auto sdfg = builder.move();
 
     builder::StructuredSDFGBuilder builder_opt(sdfg);
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
 
-    transformations::EinsumLift transformation(tasklet1, {for_j}, block2);
+    transformations::EinsumLift transformation({for_j}, block2);
     EXPECT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
     transformation.apply(builder_opt, analysis_manager);
+
+    auto& root_opt = builder_opt.subject().root();
+    EXPECT_EQ(root_opt.size(), 1);
+    auto* for_i_opt = dynamic_cast<structured_control_flow::For*>(&root_opt.at(0).first);
+    EXPECT_TRUE(for_i_opt);
+    EXPECT_EQ(for_i_opt, &for_i);
+    EXPECT_EQ(for_i_opt->root().size(), 1);
+    auto* for_k_opt = dynamic_cast<structured_control_flow::For*>(&for_i_opt->root().at(0).first);
+    EXPECT_TRUE(for_k_opt);
+    EXPECT_EQ(for_k_opt, &for_k);
+    EXPECT_EQ(for_k_opt->root().size(), 2);
+    auto* block1_opt =
+        dynamic_cast<structured_control_flow::Block*>(&for_k_opt->root().at(0).first);
+    EXPECT_TRUE(block1_opt);
+    EXPECT_EQ(block1_opt, &block1);
+    auto* block_einsum =
+        dynamic_cast<structured_control_flow::Block*>(&for_k_opt->root().at(1).first);
+    EXPECT_TRUE(block_einsum);
+    EXPECT_EQ(block_einsum->dataflow().nodes().size(), 5);
+    data_flow::LibraryNode* libnode;
+    for (auto& node : block_einsum->dataflow().nodes()) {
+        if ((libnode = dynamic_cast<data_flow::LibraryNode*>(&node))) break;
+    }
+    EXPECT_TRUE(libnode);
+    auto* einsum_node = dynamic_cast<einsum::EinsumNode*>(libnode);
+    EXPECT_TRUE(einsum_node);
+    EXPECT_EQ(einsum_node->outputs(), std::vector<std::string>({"_out"}));
+    EXPECT_EQ(einsum_node->inputs(), std::vector<std::string>({"_in0", "_in1", "_out"}));
+    EXPECT_EQ(einsum_node->maps().size(), 1);
+    EXPECT_TRUE(symbolic::eq(einsum_node->map(0).first, indvar_j));
+    EXPECT_TRUE(symbolic::eq(einsum_node->map(0).second, bound_j));
+    EXPECT_TRUE(subsets_eq(einsum_node->out_indices(), subsets.at("C")));
+    auto conn2cont = get_conn2cont(*block_einsum, *libnode);
+    EXPECT_EQ(einsum_node->in_indices().size(), 3);
+    EXPECT_TRUE(subsets_eq(einsum_node->in_indices(0), subsets.at(conn2cont.at("_in0"))));
+    EXPECT_TRUE(subsets_eq(einsum_node->in_indices(1), subsets.at(conn2cont.at("_in1"))));
+    EXPECT_TRUE(subsets_eq(einsum_node->in_indices(2), subsets.at(conn2cont.at("_out"))));
 }
 
 TEST(EinsumLift, TensorContraction3D_1) {
@@ -186,6 +293,12 @@ TEST(EinsumLift, TensorContraction3D_1) {
 
     gen_for(n, N, body_m);
 
+    const std::unordered_map<std::string, data_flow::Subset> subsets = {
+        {"A", {indvar_l, indvar_j, indvar_m}},
+        {"B", {indvar_i, indvar_l, indvar_n}},
+        {"C", {indvar_n, indvar_m, indvar_k}},
+        {"D", {indvar_i, indvar_j, indvar_k}}};
+
     auto& block2 = builder.add_block(body_n);
     auto& A = builder.add_access(block2, "A");
     auto& B = builder.add_access(block2, "B");
@@ -196,28 +309,74 @@ TEST(EinsumLift, TensorContraction3D_1) {
     auto& tmp2 = builder.add_access(block2, "tmp2");
     auto& tasklet2 = builder.add_tasklet(block2, data_flow::TaskletCode::mul, {"_out", base_desc},
                                          {{"_in1", base_desc}, {"_in2", base_desc}});
-    builder.add_memlet(block2, A, "void", tasklet2, "_in1", {indvar_l, indvar_j, indvar_m});
-    builder.add_memlet(block2, B, "void", tasklet2, "_in2", {indvar_i, indvar_l, indvar_n});
+    builder.add_memlet(block2, A, "void", tasklet2, "_in1", subsets.at("A"));
+    builder.add_memlet(block2, B, "void", tasklet2, "_in2", subsets.at("B"));
     builder.add_memlet(block2, tasklet2, "_out", tmp1, "void", {});
     auto& tasklet3 = builder.add_tasklet(block2, data_flow::TaskletCode::mul, {"_out", base_desc},
                                          {{"_in1", base_desc}, {"_in2", base_desc}});
     builder.add_memlet(block2, tmp1, "void", tasklet3, "_in1", {});
-    builder.add_memlet(block2, C, "void", tasklet3, "_in2", {indvar_n, indvar_m, indvar_k});
+    builder.add_memlet(block2, C, "void", tasklet3, "_in2", subsets.at("C"));
     builder.add_memlet(block2, tasklet3, "_out", tmp2, "void", {});
     auto& tasklet4 = builder.add_tasklet(block2, data_flow::TaskletCode::add, {"_out", base_desc},
                                          {{"_in1", base_desc}, {"_in2", base_desc}});
-    builder.add_memlet(block2, D2, "void", tasklet4, "_in1", {indvar_i, indvar_j, indvar_k});
+    builder.add_memlet(block2, D2, "void", tasklet4, "_in1", subsets.at("D"));
     builder.add_memlet(block2, tmp2, "void", tasklet4, "_in2", {});
-    builder.add_memlet(block2, tasklet4, "_out", D3, "void", {indvar_i, indvar_j, indvar_k});
+    builder.add_memlet(block2, tasklet4, "_out", D3, "void", subsets.at("D"));
 
     auto sdfg = builder.move();
 
     builder::StructuredSDFGBuilder builder_opt(sdfg);
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
 
-    transformations::EinsumLift transformation(tasklet1, {for_l, for_m, for_n}, block2);
+    transformations::EinsumLift transformation({for_l, for_m, for_n}, block2);
     EXPECT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
     transformation.apply(builder_opt, analysis_manager);
+
+    auto& root_opt = builder_opt.subject().root();
+    EXPECT_EQ(root_opt.size(), 1);
+    auto* for_i_opt = dynamic_cast<structured_control_flow::For*>(&root_opt.at(0).first);
+    EXPECT_TRUE(for_i_opt);
+    EXPECT_EQ(for_i_opt, &for_i);
+    EXPECT_EQ(for_i_opt->root().size(), 1);
+    auto* for_j_opt = dynamic_cast<structured_control_flow::For*>(&for_i_opt->root().at(0).first);
+    EXPECT_TRUE(for_j_opt);
+    EXPECT_EQ(for_j_opt, &for_j);
+    EXPECT_EQ(for_j_opt->root().size(), 1);
+    auto* for_k_opt = dynamic_cast<structured_control_flow::For*>(&for_j_opt->root().at(0).first);
+    EXPECT_TRUE(for_k_opt);
+    EXPECT_EQ(for_k_opt, &for_k);
+    EXPECT_EQ(for_k_opt->root().size(), 2);
+    auto* block1_opt =
+        dynamic_cast<structured_control_flow::Block*>(&for_k_opt->root().at(0).first);
+    EXPECT_TRUE(block1_opt);
+    EXPECT_EQ(block1_opt, &block1);
+    auto* block_einsum =
+        dynamic_cast<structured_control_flow::Block*>(&for_k_opt->root().at(1).first);
+    EXPECT_TRUE(block_einsum);
+    EXPECT_EQ(block_einsum->dataflow().nodes().size(), 6);
+    data_flow::LibraryNode* libnode;
+    for (auto& node : block_einsum->dataflow().nodes()) {
+        if ((libnode = dynamic_cast<data_flow::LibraryNode*>(&node))) break;
+    }
+    EXPECT_TRUE(libnode);
+    auto* einsum_node = dynamic_cast<einsum::EinsumNode*>(libnode);
+    EXPECT_TRUE(einsum_node);
+    EXPECT_EQ(einsum_node->outputs(), std::vector<std::string>({"_out"}));
+    EXPECT_EQ(einsum_node->inputs(), std::vector<std::string>({"_in0", "_in1", "_in2", "_out"}));
+    EXPECT_EQ(einsum_node->maps().size(), 3);
+    EXPECT_TRUE(symbolic::eq(einsum_node->map(0).first, indvar_l));
+    EXPECT_TRUE(symbolic::eq(einsum_node->map(0).second, bound_l));
+    EXPECT_TRUE(symbolic::eq(einsum_node->map(1).first, indvar_m));
+    EXPECT_TRUE(symbolic::eq(einsum_node->map(1).second, bound_m));
+    EXPECT_TRUE(symbolic::eq(einsum_node->map(2).first, indvar_n));
+    EXPECT_TRUE(symbolic::eq(einsum_node->map(2).second, bound_n));
+    EXPECT_TRUE(subsets_eq(einsum_node->out_indices(), subsets.at("D")));
+    auto conn2cont = get_conn2cont(*block_einsum, *libnode);
+    EXPECT_EQ(einsum_node->in_indices().size(), 4);
+    EXPECT_TRUE(subsets_eq(einsum_node->in_indices(0), subsets.at(conn2cont.at("_in0"))));
+    EXPECT_TRUE(subsets_eq(einsum_node->in_indices(1), subsets.at(conn2cont.at("_in1"))));
+    EXPECT_TRUE(subsets_eq(einsum_node->in_indices(2), subsets.at(conn2cont.at("_in2"))));
+    EXPECT_TRUE(subsets_eq(einsum_node->in_indices(3), subsets.at(conn2cont.at("_out"))));
 }
 
 TEST(EinsumLift, TensorContraction3D_2) {
@@ -267,6 +426,12 @@ TEST(EinsumLift, TensorContraction3D_2) {
 
     gen_for(n, N, body_m);
 
+    const std::unordered_map<std::string, data_flow::Subset> subsets = {
+        {"A", {indvar_l, indvar_j, indvar_m}},
+        {"B", {indvar_i, indvar_l, indvar_n}},
+        {"C", {indvar_n, indvar_m, indvar_k}},
+        {"D", {indvar_i, indvar_j, indvar_k}}};
+
     auto& block2 = builder.add_block(body_n);
     auto& A = builder.add_access(block2, "A");
     auto& B = builder.add_access(block2, "B");
@@ -276,25 +441,71 @@ TEST(EinsumLift, TensorContraction3D_2) {
     auto& tmp = builder.add_access(block2, "tmp");
     auto& tasklet2 = builder.add_tasklet(block2, data_flow::TaskletCode::mul, {"_out", base_desc},
                                          {{"_in1", base_desc}, {"_in2", base_desc}});
-    builder.add_memlet(block2, A, "void", tasklet2, "_in1", {indvar_l, indvar_j, indvar_m});
-    builder.add_memlet(block2, B, "void", tasklet2, "_in2", {indvar_i, indvar_l, indvar_n});
+    builder.add_memlet(block2, A, "void", tasklet2, "_in1", subsets.at("A"));
+    builder.add_memlet(block2, B, "void", tasklet2, "_in2", subsets.at("B"));
     builder.add_memlet(block2, tasklet2, "_out", tmp, "void", {});
     auto& tasklet3 =
         builder.add_tasklet(block2, data_flow::TaskletCode::fma, {"_out", base_desc},
                             {{"_in1", base_desc}, {"_in2", base_desc}, {"_in3", base_desc}});
     builder.add_memlet(block2, tmp, "void", tasklet3, "_in1", {});
-    builder.add_memlet(block2, C, "void", tasklet3, "_in2", {indvar_n, indvar_m, indvar_k});
-    builder.add_memlet(block2, D2, "void", tasklet3, "_in3", {indvar_i, indvar_j, indvar_k});
-    builder.add_memlet(block2, tasklet3, "_out", D3, "void", {indvar_i, indvar_j, indvar_k});
+    builder.add_memlet(block2, C, "void", tasklet3, "_in2", subsets.at("C"));
+    builder.add_memlet(block2, D2, "void", tasklet3, "_in3", subsets.at("D"));
+    builder.add_memlet(block2, tasklet3, "_out", D3, "void", subsets.at("D"));
 
     auto sdfg = builder.move();
 
     builder::StructuredSDFGBuilder builder_opt(sdfg);
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
 
-    transformations::EinsumLift transformation(tasklet1, {for_l, for_m, for_n}, block2);
+    transformations::EinsumLift transformation({for_l, for_m, for_n}, block2);
     EXPECT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
     transformation.apply(builder_opt, analysis_manager);
+
+    auto& root_opt = builder_opt.subject().root();
+    EXPECT_EQ(root_opt.size(), 1);
+    auto* for_i_opt = dynamic_cast<structured_control_flow::For*>(&root_opt.at(0).first);
+    EXPECT_TRUE(for_i_opt);
+    EXPECT_EQ(for_i_opt, &for_i);
+    EXPECT_EQ(for_i_opt->root().size(), 1);
+    auto* for_j_opt = dynamic_cast<structured_control_flow::For*>(&for_i_opt->root().at(0).first);
+    EXPECT_TRUE(for_j_opt);
+    EXPECT_EQ(for_j_opt, &for_j);
+    EXPECT_EQ(for_j_opt->root().size(), 1);
+    auto* for_k_opt = dynamic_cast<structured_control_flow::For*>(&for_j_opt->root().at(0).first);
+    EXPECT_TRUE(for_k_opt);
+    EXPECT_EQ(for_k_opt, &for_k);
+    EXPECT_EQ(for_k_opt->root().size(), 2);
+    auto* block1_opt =
+        dynamic_cast<structured_control_flow::Block*>(&for_k_opt->root().at(0).first);
+    EXPECT_TRUE(block1_opt);
+    EXPECT_EQ(block1_opt, &block1);
+    auto* block_einsum =
+        dynamic_cast<structured_control_flow::Block*>(&for_k_opt->root().at(1).first);
+    EXPECT_TRUE(block_einsum);
+    EXPECT_EQ(block_einsum->dataflow().nodes().size(), 6);
+    data_flow::LibraryNode* libnode;
+    for (auto& node : block_einsum->dataflow().nodes()) {
+        if ((libnode = dynamic_cast<data_flow::LibraryNode*>(&node))) break;
+    }
+    EXPECT_TRUE(libnode);
+    auto* einsum_node = dynamic_cast<einsum::EinsumNode*>(libnode);
+    EXPECT_TRUE(einsum_node);
+    EXPECT_EQ(einsum_node->outputs(), std::vector<std::string>({"_out"}));
+    EXPECT_EQ(einsum_node->inputs(), std::vector<std::string>({"_in0", "_in1", "_in2", "_out"}));
+    EXPECT_EQ(einsum_node->maps().size(), 3);
+    EXPECT_TRUE(symbolic::eq(einsum_node->map(0).first, indvar_l));
+    EXPECT_TRUE(symbolic::eq(einsum_node->map(0).second, bound_l));
+    EXPECT_TRUE(symbolic::eq(einsum_node->map(1).first, indvar_m));
+    EXPECT_TRUE(symbolic::eq(einsum_node->map(1).second, bound_m));
+    EXPECT_TRUE(symbolic::eq(einsum_node->map(2).first, indvar_n));
+    EXPECT_TRUE(symbolic::eq(einsum_node->map(2).second, bound_n));
+    EXPECT_TRUE(subsets_eq(einsum_node->out_indices(), subsets.at("D")));
+    auto conn2cont = get_conn2cont(*block_einsum, *libnode);
+    EXPECT_EQ(einsum_node->in_indices().size(), 4);
+    EXPECT_TRUE(subsets_eq(einsum_node->in_indices(0), subsets.at(conn2cont.at("_in0"))));
+    EXPECT_TRUE(subsets_eq(einsum_node->in_indices(1), subsets.at(conn2cont.at("_in1"))));
+    EXPECT_TRUE(subsets_eq(einsum_node->in_indices(2), subsets.at(conn2cont.at("_in2"))));
+    EXPECT_TRUE(subsets_eq(einsum_node->in_indices(3), subsets.at(conn2cont.at("_out"))));
 }
 
 TEST(EinsumLift, MatrixVectorMultiplication_1) {
@@ -326,6 +537,9 @@ TEST(EinsumLift, MatrixVectorMultiplication_1) {
 
     gen_for(j, J, body_i);
 
+    const std::unordered_map<std::string, data_flow::Subset> subsets = {
+        {"A", {indvar_i, indvar_j}}, {"b", {indvar_j}}, {"c", {indvar_i}}};
+
     auto& block2 = builder.add_block(body_j);
     auto& A = builder.add_access(block2, "A");
     auto& b = builder.add_access(block2, "b");
@@ -334,23 +548,56 @@ TEST(EinsumLift, MatrixVectorMultiplication_1) {
     auto& tmp = builder.add_access(block2, "tmp");
     auto& tasklet2 = builder.add_tasklet(block2, data_flow::TaskletCode::mul, {"_out", base_desc},
                                          {{"_in1", base_desc}, {"_in2", base_desc}});
-    builder.add_memlet(block2, A, "void", tasklet2, "_in1", {indvar_i, indvar_j});
-    builder.add_memlet(block2, b, "void", tasklet2, "_in2", {indvar_j});
+    builder.add_memlet(block2, A, "void", tasklet2, "_in1", subsets.at("A"));
+    builder.add_memlet(block2, b, "void", tasklet2, "_in2", subsets.at("b"));
     builder.add_memlet(block2, tasklet2, "_out", tmp, "void", {});
     auto& tasklet3 = builder.add_tasklet(block2, data_flow::TaskletCode::add, {"_out", base_desc},
                                          {{"_in1", base_desc}, {"_in2", base_desc}});
-    builder.add_memlet(block2, c2, "void", tasklet3, "_in1", {indvar_i});
+    builder.add_memlet(block2, c2, "void", tasklet3, "_in1", subsets.at("c"));
     builder.add_memlet(block2, tmp, "void", tasklet3, "_in2", {});
-    builder.add_memlet(block2, tasklet3, "_out", c3, "void", {indvar_i});
+    builder.add_memlet(block2, tasklet3, "_out", c3, "void", subsets.at("c"));
 
     auto sdfg = builder.move();
 
     builder::StructuredSDFGBuilder builder_opt(sdfg);
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
 
-    transformations::EinsumLift transformation(tasklet1, {for_j}, block2);
+    transformations::EinsumLift transformation({for_j}, block2);
     EXPECT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
     transformation.apply(builder_opt, analysis_manager);
+
+    auto& root_opt = builder_opt.subject().root();
+    EXPECT_EQ(root_opt.size(), 1);
+    auto* for_i_opt = dynamic_cast<structured_control_flow::For*>(&root_opt.at(0).first);
+    EXPECT_TRUE(for_i_opt);
+    EXPECT_EQ(for_i_opt, &for_i);
+    EXPECT_EQ(for_i_opt->root().size(), 2);
+    auto* block1_opt =
+        dynamic_cast<structured_control_flow::Block*>(&for_i_opt->root().at(0).first);
+    EXPECT_TRUE(block1_opt);
+    EXPECT_EQ(block1_opt, &block1);
+    auto* block_einsum =
+        dynamic_cast<structured_control_flow::Block*>(&for_i_opt->root().at(1).first);
+    EXPECT_TRUE(block_einsum);
+    EXPECT_EQ(block_einsum->dataflow().nodes().size(), 5);
+    data_flow::LibraryNode* libnode;
+    for (auto& node : block_einsum->dataflow().nodes()) {
+        if ((libnode = dynamic_cast<data_flow::LibraryNode*>(&node))) break;
+    }
+    EXPECT_TRUE(libnode);
+    auto* einsum_node = dynamic_cast<einsum::EinsumNode*>(libnode);
+    EXPECT_TRUE(einsum_node);
+    EXPECT_EQ(einsum_node->outputs(), std::vector<std::string>({"_out"}));
+    EXPECT_EQ(einsum_node->inputs(), std::vector<std::string>({"_in0", "_in1", "_out"}));
+    EXPECT_EQ(einsum_node->maps().size(), 1);
+    EXPECT_TRUE(symbolic::eq(einsum_node->map(0).first, indvar_j));
+    EXPECT_TRUE(symbolic::eq(einsum_node->map(0).second, bound_j));
+    EXPECT_TRUE(subsets_eq(einsum_node->out_indices(), subsets.at("c")));
+    auto conn2cont = get_conn2cont(*block_einsum, *libnode);
+    EXPECT_EQ(einsum_node->in_indices().size(), 3);
+    EXPECT_TRUE(subsets_eq(einsum_node->in_indices(0), subsets.at(conn2cont.at("_in0"))));
+    EXPECT_TRUE(subsets_eq(einsum_node->in_indices(1), subsets.at(conn2cont.at("_in1"))));
+    EXPECT_TRUE(subsets_eq(einsum_node->in_indices(2), subsets.at(conn2cont.at("_out"))));
 }
 
 TEST(EinsumLift, MatrixVectorMultiplication_2) {
@@ -381,6 +628,9 @@ TEST(EinsumLift, MatrixVectorMultiplication_2) {
 
     gen_for(j, J, body_i);
 
+    const std::unordered_map<std::string, data_flow::Subset> subsets = {
+        {"A", {indvar_i, indvar_j}}, {"b", {indvar_j}}, {"c", {indvar_i}}};
+
     auto& block2 = builder.add_block(body_j);
     auto& A = builder.add_access(block2, "A");
     auto& b = builder.add_access(block2, "b");
@@ -389,19 +639,52 @@ TEST(EinsumLift, MatrixVectorMultiplication_2) {
     auto& tasklet2 =
         builder.add_tasklet(block2, data_flow::TaskletCode::fma, {"_out", base_desc},
                             {{"_in1", base_desc}, {"_in2", base_desc}, {"_in3", base_desc}});
-    builder.add_memlet(block2, A, "void", tasklet2, "_in1", {indvar_i, indvar_j});
-    builder.add_memlet(block2, b, "void", tasklet2, "_in2", {indvar_j});
-    builder.add_memlet(block2, c2, "void", tasklet2, "_in3", {indvar_i});
-    builder.add_memlet(block2, tasklet2, "_out", c3, "void", {indvar_i});
+    builder.add_memlet(block2, A, "void", tasklet2, "_in1", subsets.at("A"));
+    builder.add_memlet(block2, b, "void", tasklet2, "_in2", subsets.at("b"));
+    builder.add_memlet(block2, c2, "void", tasklet2, "_in3", subsets.at("c"));
+    builder.add_memlet(block2, tasklet2, "_out", c3, "void", subsets.at("c"));
 
     auto sdfg = builder.move();
 
     builder::StructuredSDFGBuilder builder_opt(sdfg);
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
 
-    transformations::EinsumLift transformation(tasklet1, {for_j}, block2);
+    transformations::EinsumLift transformation({for_j}, block2);
     EXPECT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
     transformation.apply(builder_opt, analysis_manager);
+
+    auto& root_opt = builder_opt.subject().root();
+    EXPECT_EQ(root_opt.size(), 1);
+    auto* for_i_opt = dynamic_cast<structured_control_flow::For*>(&root_opt.at(0).first);
+    EXPECT_TRUE(for_i_opt);
+    EXPECT_EQ(for_i_opt, &for_i);
+    EXPECT_EQ(for_i_opt->root().size(), 2);
+    auto* block1_opt =
+        dynamic_cast<structured_control_flow::Block*>(&for_i_opt->root().at(0).first);
+    EXPECT_TRUE(block1_opt);
+    EXPECT_EQ(block1_opt, &block1);
+    auto* block_einsum =
+        dynamic_cast<structured_control_flow::Block*>(&for_i_opt->root().at(1).first);
+    EXPECT_TRUE(block_einsum);
+    EXPECT_EQ(block_einsum->dataflow().nodes().size(), 5);
+    data_flow::LibraryNode* libnode;
+    for (auto& node : block_einsum->dataflow().nodes()) {
+        if ((libnode = dynamic_cast<data_flow::LibraryNode*>(&node))) break;
+    }
+    EXPECT_TRUE(libnode);
+    auto* einsum_node = dynamic_cast<einsum::EinsumNode*>(libnode);
+    EXPECT_TRUE(einsum_node);
+    EXPECT_EQ(einsum_node->outputs(), std::vector<std::string>({"_out"}));
+    EXPECT_EQ(einsum_node->inputs(), std::vector<std::string>({"_in0", "_in1", "_out"}));
+    EXPECT_EQ(einsum_node->maps().size(), 1);
+    EXPECT_TRUE(symbolic::eq(einsum_node->map(0).first, indvar_j));
+    EXPECT_TRUE(symbolic::eq(einsum_node->map(0).second, bound_j));
+    EXPECT_TRUE(subsets_eq(einsum_node->out_indices(), subsets.at("c")));
+    auto conn2cont = get_conn2cont(*block_einsum, *libnode);
+    EXPECT_EQ(einsum_node->in_indices().size(), 3);
+    EXPECT_TRUE(subsets_eq(einsum_node->in_indices(0), subsets.at(conn2cont.at("_in0"))));
+    EXPECT_TRUE(subsets_eq(einsum_node->in_indices(1), subsets.at(conn2cont.at("_in1"))));
+    EXPECT_TRUE(subsets_eq(einsum_node->in_indices(2), subsets.at(conn2cont.at("_out"))));
 }
 
 TEST(EinsumLift, DiagonalExtraction_1) {
@@ -427,24 +710,57 @@ TEST(EinsumLift, DiagonalExtraction_1) {
                                          {"_out", base_desc}, {{"0.0", base_desc}});
     builder.add_memlet(block1, tasklet1, "_out", b1, "void", {indvar_i});
 
+    const std::unordered_map<std::string, data_flow::Subset> subsets = {{"A", {indvar_i, indvar_i}},
+                                                                        {"b", {indvar_i}}};
+
     auto& block2 = builder.add_block(body_i);
     auto& A = builder.add_access(block2, "A");
     auto& b2 = builder.add_access(block2, "b");
     auto& b3 = builder.add_access(block2, "b");
     auto& tasklet2 = builder.add_tasklet(block2, data_flow::TaskletCode::add, {"_out", base_desc},
                                          {{"_in1", base_desc}, {"_in2", base_desc}});
-    builder.add_memlet(block2, A, "void", tasklet2, "_in1", {indvar_i, indvar_i});
-    builder.add_memlet(block2, b2, "void", tasklet2, "_in2", {indvar_i});
-    builder.add_memlet(block2, tasklet2, "_out", b3, "void", {indvar_i});
+    builder.add_memlet(block2, A, "void", tasklet2, "_in1", subsets.at("A"));
+    builder.add_memlet(block2, b2, "void", tasklet2, "_in2", subsets.at("b"));
+    builder.add_memlet(block2, tasklet2, "_out", b3, "void", subsets.at("b"));
 
     auto sdfg = builder.move();
 
     builder::StructuredSDFGBuilder builder_opt(sdfg);
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
 
-    transformations::EinsumLift transformation(tasklet1, {}, block2);
+    transformations::EinsumLift transformation({}, block2);
     EXPECT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
     transformation.apply(builder_opt, analysis_manager);
+
+    auto& root_opt = builder_opt.subject().root();
+    EXPECT_EQ(root_opt.size(), 1);
+    auto* for_i_opt = dynamic_cast<structured_control_flow::For*>(&root_opt.at(0).first);
+    EXPECT_TRUE(for_i_opt);
+    EXPECT_EQ(for_i_opt, &for_i);
+    EXPECT_EQ(for_i_opt->root().size(), 2);
+    auto* block1_opt =
+        dynamic_cast<structured_control_flow::Block*>(&for_i_opt->root().at(0).first);
+    EXPECT_TRUE(block1_opt);
+    EXPECT_EQ(block1_opt, &block1);
+    auto* block_einsum =
+        dynamic_cast<structured_control_flow::Block*>(&for_i_opt->root().at(1).first);
+    EXPECT_TRUE(block_einsum);
+    EXPECT_EQ(block_einsum->dataflow().nodes().size(), 4);
+    data_flow::LibraryNode* libnode;
+    for (auto& node : block_einsum->dataflow().nodes()) {
+        if ((libnode = dynamic_cast<data_flow::LibraryNode*>(&node))) break;
+    }
+    EXPECT_TRUE(libnode);
+    auto* einsum_node = dynamic_cast<einsum::EinsumNode*>(libnode);
+    EXPECT_TRUE(einsum_node);
+    EXPECT_EQ(einsum_node->outputs(), std::vector<std::string>({"_out"}));
+    EXPECT_EQ(einsum_node->inputs(), std::vector<std::string>({"_in0", "_out"}));
+    EXPECT_EQ(einsum_node->maps().size(), 0);
+    EXPECT_TRUE(subsets_eq(einsum_node->out_indices(), subsets.at("b")));
+    auto conn2cont = get_conn2cont(*block_einsum, *libnode);
+    EXPECT_EQ(einsum_node->in_indices().size(), 2);
+    EXPECT_TRUE(subsets_eq(einsum_node->in_indices(0), subsets.at(conn2cont.at("_in0"))));
+    EXPECT_TRUE(subsets_eq(einsum_node->in_indices(1), subsets.at(conn2cont.at("_out"))));
 }
 
 TEST(EinsumLift, DiagonalExtraction_2) {
@@ -464,27 +780,116 @@ TEST(EinsumLift, DiagonalExtraction_2) {
 
     gen_for(i, I, root);
 
+    const std::unordered_map<std::string, data_flow::Subset> subsets = {{"A", {indvar_i, indvar_i}},
+                                                                        {"b", {indvar_i}}};
+
     auto& block1 = builder.add_block(body_i);
     auto& A = builder.add_access(block1, "A");
     auto& b1 = builder.add_access(block1, "b");
     auto& b2 = builder.add_access(block1, "b");
     auto& tasklet1 = builder.add_tasklet(block1, data_flow::TaskletCode::assign,
                                          {"_out", base_desc}, {{"0.0", base_desc}});
-    builder.add_memlet(block1, tasklet1, "_out", b1, "void", {indvar_i});
+    builder.add_memlet(block1, tasklet1, "_out", b1, "void", subsets.at("b"));
     auto& tasklet2 = builder.add_tasklet(block1, data_flow::TaskletCode::add, {"_out", base_desc},
                                          {{"_in1", base_desc}, {"_in2", base_desc}});
-    builder.add_memlet(block1, A, "void", tasklet2, "_in1", {indvar_i, indvar_i});
-    builder.add_memlet(block1, b1, "void", tasklet2, "_in2", {indvar_i});
-    builder.add_memlet(block1, tasklet2, "_out", b2, "void", {indvar_i});
+    builder.add_memlet(block1, A, "void", tasklet2, "_in1", subsets.at("A"));
+    builder.add_memlet(block1, b1, "void", tasklet2, "_in2", subsets.at("b"));
+    builder.add_memlet(block1, tasklet2, "_out", b2, "void", subsets.at("b"));
 
     auto sdfg = builder.move();
 
     builder::StructuredSDFGBuilder builder_opt(sdfg);
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
 
-    transformations::EinsumLift transformation(tasklet1, {}, block1);
+    transformations::EinsumLift transformation({}, block1);
     EXPECT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
     transformation.apply(builder_opt, analysis_manager);
+
+    auto& root_opt = builder_opt.subject().root();
+    EXPECT_EQ(root_opt.size(), 1);
+    auto* for_i_opt = dynamic_cast<structured_control_flow::For*>(&root_opt.at(0).first);
+    EXPECT_TRUE(for_i_opt);
+    EXPECT_EQ(for_i_opt, &for_i);
+    EXPECT_EQ(for_i_opt->root().size(), 1);
+    auto* block_einsum =
+        dynamic_cast<structured_control_flow::Block*>(&for_i_opt->root().at(0).first);
+    EXPECT_TRUE(block_einsum);
+    EXPECT_EQ(block_einsum->dataflow().nodes().size(), 3);
+    data_flow::LibraryNode* libnode;
+    for (auto& node : block_einsum->dataflow().nodes()) {
+        if ((libnode = dynamic_cast<data_flow::LibraryNode*>(&node))) break;
+    }
+    EXPECT_TRUE(libnode);
+    auto* einsum_node = dynamic_cast<einsum::EinsumNode*>(libnode);
+    EXPECT_TRUE(einsum_node);
+    EXPECT_EQ(einsum_node->outputs(), std::vector<std::string>({"_out"}));
+    EXPECT_EQ(einsum_node->inputs(), std::vector<std::string>({"_in0"}));
+    EXPECT_EQ(einsum_node->maps().size(), 0);
+    EXPECT_TRUE(subsets_eq(einsum_node->out_indices(), subsets.at("b")));
+    EXPECT_EQ(einsum_node->in_indices().size(), 1);
+    EXPECT_TRUE(subsets_eq(einsum_node->in_indices(0), subsets.at("A")));
+}
+
+TEST(EinsumLift, DiagonalExtraction_3) {
+    builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
+
+    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    builder.add_container("i", sym_desc);
+    builder.add_container("I", sym_desc, true);
+
+    types::Scalar base_desc(types::PrimitiveType::Float);
+    types::Pointer desc(base_desc);
+    types::Pointer desc2(*desc.clone());
+    builder.add_container("A", desc2, true);
+    builder.add_container("b", desc, true);
+
+    auto& root = builder.subject().root();
+
+    gen_for(i, I, root);
+
+    const std::unordered_map<std::string, data_flow::Subset> subsets = {{"A", {indvar_i, indvar_i}},
+                                                                        {"b", {indvar_i}}};
+
+    auto& block1 = builder.add_block(body_i);
+    auto& A = builder.add_access(block1, "A");
+    auto& b = builder.add_access(block1, "b");
+    auto& tasklet1 = builder.add_tasklet(block1, data_flow::TaskletCode::assign,
+                                         {"_out", base_desc}, {{"_in", base_desc}});
+    builder.add_memlet(block1, A, "void", tasklet1, "_in", subsets.at("A"));
+    builder.add_memlet(block1, tasklet1, "_out", b, "void", subsets.at("b"));
+
+    auto sdfg = builder.move();
+
+    builder::StructuredSDFGBuilder builder_opt(sdfg);
+    analysis::AnalysisManager analysis_manager(builder_opt.subject());
+
+    transformations::EinsumLift transformation({}, block1);
+    EXPECT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
+    transformation.apply(builder_opt, analysis_manager);
+
+    auto& root_opt = builder_opt.subject().root();
+    EXPECT_EQ(root_opt.size(), 1);
+    auto* for_i_opt = dynamic_cast<structured_control_flow::For*>(&root_opt.at(0).first);
+    EXPECT_TRUE(for_i_opt);
+    EXPECT_EQ(for_i_opt, &for_i);
+    EXPECT_EQ(for_i_opt->root().size(), 1);
+    auto* block_einsum =
+        dynamic_cast<structured_control_flow::Block*>(&for_i_opt->root().at(0).first);
+    EXPECT_TRUE(block_einsum);
+    EXPECT_EQ(block_einsum->dataflow().nodes().size(), 3);
+    data_flow::LibraryNode* libnode;
+    for (auto& node : block_einsum->dataflow().nodes()) {
+        if ((libnode = dynamic_cast<data_flow::LibraryNode*>(&node))) break;
+    }
+    EXPECT_TRUE(libnode);
+    auto* einsum_node = dynamic_cast<einsum::EinsumNode*>(libnode);
+    EXPECT_TRUE(einsum_node);
+    EXPECT_EQ(einsum_node->outputs(), std::vector<std::string>({"_out"}));
+    EXPECT_EQ(einsum_node->inputs(), std::vector<std::string>({"_in0"}));
+    EXPECT_EQ(einsum_node->maps().size(), 0);
+    EXPECT_TRUE(subsets_eq(einsum_node->out_indices(), subsets.at("b")));
+    EXPECT_EQ(einsum_node->in_indices().size(), 1);
+    EXPECT_TRUE(subsets_eq(einsum_node->in_indices(0), subsets.at("A")));
 }
 
 TEST(EinsumLift, MatrixTrace_1) {
@@ -510,24 +915,53 @@ TEST(EinsumLift, MatrixTrace_1) {
 
     gen_for(i, I, root);
 
+    const std::unordered_map<std::string, data_flow::Subset> subsets = {{"A", {indvar_i, indvar_i}},
+                                                                        {"b", {}}};
+
     auto& block2 = builder.add_block(body_i);
     auto& A = builder.add_access(block2, "A");
     auto& b2 = builder.add_access(block2, "b");
     auto& b3 = builder.add_access(block2, "b");
     auto& tasklet2 = builder.add_tasklet(block2, data_flow::TaskletCode::add, {"_out", base_desc},
                                          {{"_in1", base_desc}, {"_in2", base_desc}});
-    builder.add_memlet(block2, A, "void", tasklet2, "_in1", {indvar_i, indvar_i});
-    builder.add_memlet(block2, b2, "void", tasklet2, "_in2", {});
-    builder.add_memlet(block2, tasklet2, "_out", b3, "void", {});
+    builder.add_memlet(block2, A, "void", tasklet2, "_in1", subsets.at("A"));
+    builder.add_memlet(block2, b2, "void", tasklet2, "_in2", subsets.at("b"));
+    builder.add_memlet(block2, tasklet2, "_out", b3, "void", subsets.at("b"));
 
     auto sdfg = builder.move();
 
     builder::StructuredSDFGBuilder builder_opt(sdfg);
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
 
-    transformations::EinsumLift transformation(tasklet1, {for_i}, block2);
+    transformations::EinsumLift transformation({for_i}, block2);
     EXPECT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
     transformation.apply(builder_opt, analysis_manager);
+
+    auto& root_opt = builder_opt.subject().root();
+    EXPECT_EQ(root_opt.size(), 2);
+    auto* block1_opt = dynamic_cast<structured_control_flow::Block*>(&root_opt.at(0).first);
+    EXPECT_TRUE(block1_opt);
+    EXPECT_EQ(block1_opt, &block1);
+    auto* block_einsum = dynamic_cast<structured_control_flow::Block*>(&root_opt.at(1).first);
+    EXPECT_TRUE(block_einsum);
+    EXPECT_EQ(block_einsum->dataflow().nodes().size(), 4);
+    data_flow::LibraryNode* libnode;
+    for (auto& node : block_einsum->dataflow().nodes()) {
+        if ((libnode = dynamic_cast<data_flow::LibraryNode*>(&node))) break;
+    }
+    EXPECT_TRUE(libnode);
+    auto* einsum_node = dynamic_cast<einsum::EinsumNode*>(libnode);
+    EXPECT_TRUE(einsum_node);
+    EXPECT_EQ(einsum_node->outputs(), std::vector<std::string>({"_out"}));
+    EXPECT_EQ(einsum_node->inputs(), std::vector<std::string>({"_in0", "_out"}));
+    EXPECT_EQ(einsum_node->maps().size(), 1);
+    EXPECT_TRUE(symbolic::eq(einsum_node->map(0).first, indvar_i));
+    EXPECT_TRUE(symbolic::eq(einsum_node->map(0).second, bound_i));
+    EXPECT_TRUE(subsets_eq(einsum_node->out_indices(), subsets.at("b")));
+    auto conn2cont = get_conn2cont(*block_einsum, *libnode);
+    EXPECT_EQ(einsum_node->in_indices().size(), 2);
+    EXPECT_TRUE(subsets_eq(einsum_node->in_indices(0), subsets.at(conn2cont.at("_in0"))));
+    EXPECT_TRUE(subsets_eq(einsum_node->in_indices(1), subsets.at(conn2cont.at("_out"))));
 }
 
 TEST(EinsumLift, MatrixTrace_2) {
@@ -553,24 +987,53 @@ TEST(EinsumLift, MatrixTrace_2) {
 
     gen_for(i, I, root);
 
+    const std::unordered_map<std::string, data_flow::Subset> subsets = {{"A", {indvar_i, indvar_i}},
+                                                                        {"b", {symbolic::zero()}}};
+
     auto& block2 = builder.add_block(body_i);
     auto& A = builder.add_access(block2, "A");
     auto& b2 = builder.add_access(block2, "b");
     auto& b3 = builder.add_access(block2, "b");
     auto& tasklet2 = builder.add_tasklet(block2, data_flow::TaskletCode::add, {"_out", base_desc},
                                          {{"_in1", base_desc}, {"_in2", base_desc}});
-    builder.add_memlet(block2, A, "void", tasklet2, "_in1", {indvar_i, indvar_i});
-    builder.add_memlet(block2, b2, "void", tasklet2, "_in2", {symbolic::zero()});
-    builder.add_memlet(block2, tasklet2, "_out", b3, "void", {symbolic::zero()});
+    builder.add_memlet(block2, A, "void", tasklet2, "_in1", subsets.at("A"));
+    builder.add_memlet(block2, b2, "void", tasklet2, "_in2", subsets.at("b"));
+    builder.add_memlet(block2, tasklet2, "_out", b3, "void", subsets.at("b"));
 
     auto sdfg = builder.move();
 
     builder::StructuredSDFGBuilder builder_opt(sdfg);
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
 
-    transformations::EinsumLift transformation(tasklet1, {for_i}, block2);
+    transformations::EinsumLift transformation({for_i}, block2);
     EXPECT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
     transformation.apply(builder_opt, analysis_manager);
+
+    auto& root_opt = builder_opt.subject().root();
+    EXPECT_EQ(root_opt.size(), 2);
+    auto* block1_opt = dynamic_cast<structured_control_flow::Block*>(&root_opt.at(0).first);
+    EXPECT_TRUE(block1_opt);
+    EXPECT_EQ(block1_opt, &block1);
+    auto* block_einsum = dynamic_cast<structured_control_flow::Block*>(&root_opt.at(1).first);
+    EXPECT_TRUE(block_einsum);
+    EXPECT_EQ(block_einsum->dataflow().nodes().size(), 4);
+    data_flow::LibraryNode* libnode;
+    for (auto& node : block_einsum->dataflow().nodes()) {
+        if ((libnode = dynamic_cast<data_flow::LibraryNode*>(&node))) break;
+    }
+    EXPECT_TRUE(libnode);
+    auto* einsum_node = dynamic_cast<einsum::EinsumNode*>(libnode);
+    EXPECT_TRUE(einsum_node);
+    EXPECT_EQ(einsum_node->outputs(), std::vector<std::string>({"_out"}));
+    EXPECT_EQ(einsum_node->inputs(), std::vector<std::string>({"_in0", "_out"}));
+    EXPECT_EQ(einsum_node->maps().size(), 1);
+    EXPECT_TRUE(symbolic::eq(einsum_node->map(0).first, indvar_i));
+    EXPECT_TRUE(symbolic::eq(einsum_node->map(0).second, bound_i));
+    EXPECT_TRUE(subsets_eq(einsum_node->out_indices(), subsets.at("b")));
+    auto conn2cont = get_conn2cont(*block_einsum, *libnode);
+    EXPECT_EQ(einsum_node->in_indices().size(), 2);
+    EXPECT_TRUE(subsets_eq(einsum_node->in_indices(0), subsets.at(conn2cont.at("_in0"))));
+    EXPECT_TRUE(subsets_eq(einsum_node->in_indices(1), subsets.at(conn2cont.at("_out"))));
 }
 
 TEST(EinsumLift, MatrixCopy_1) {
@@ -600,24 +1063,61 @@ TEST(EinsumLift, MatrixCopy_1) {
                                          {"_out", base_desc}, {{"0.0", base_desc}});
     builder.add_memlet(block1, tasklet1, "_out", B1, "void", {indvar_i, indvar_j});
 
+    const std::unordered_map<std::string, data_flow::Subset> subsets = {
+        {"A", {indvar_i, indvar_j}}, {"B", {indvar_i, indvar_j}}};
+
     auto& block2 = builder.add_block(body_j);
     auto& A = builder.add_access(block2, "A");
     auto& B2 = builder.add_access(block2, "B");
     auto& B3 = builder.add_access(block2, "B");
     auto& tasklet2 = builder.add_tasklet(block2, data_flow::TaskletCode::add, {"_out", base_desc},
                                          {{"_in1", base_desc}, {"_in2", base_desc}});
-    builder.add_memlet(block2, A, "void", tasklet2, "_in1", {indvar_i, indvar_j});
-    builder.add_memlet(block2, B2, "void", tasklet2, "_in2", {indvar_i, indvar_j});
-    builder.add_memlet(block2, tasklet2, "_out", B3, "void", {indvar_i, indvar_j});
+    builder.add_memlet(block2, A, "void", tasklet2, "_in1", subsets.at("A"));
+    builder.add_memlet(block2, B2, "void", tasklet2, "_in2", subsets.at("B"));
+    builder.add_memlet(block2, tasklet2, "_out", B3, "void", subsets.at("B"));
 
     auto sdfg = builder.move();
 
     builder::StructuredSDFGBuilder builder_opt(sdfg);
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
 
-    transformations::EinsumLift transformation(tasklet1, {}, block2);
+    transformations::EinsumLift transformation({}, block2);
     EXPECT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
     transformation.apply(builder_opt, analysis_manager);
+
+    auto& root_opt = builder_opt.subject().root();
+    EXPECT_EQ(root_opt.size(), 1);
+    auto* for_i_opt = dynamic_cast<structured_control_flow::For*>(&root_opt.at(0).first);
+    EXPECT_TRUE(for_i_opt);
+    EXPECT_EQ(for_i_opt, &for_i);
+    EXPECT_EQ(for_i_opt->root().size(), 1);
+    auto* for_j_opt = dynamic_cast<structured_control_flow::For*>(&for_i_opt->root().at(0).first);
+    EXPECT_TRUE(for_j_opt);
+    EXPECT_EQ(for_j_opt, &for_j);
+    EXPECT_EQ(for_j_opt->root().size(), 2);
+    auto* block1_opt =
+        dynamic_cast<structured_control_flow::Block*>(&for_j_opt->root().at(0).first);
+    EXPECT_TRUE(block1_opt);
+    EXPECT_EQ(block1_opt, &block1);
+    auto* block_einsum =
+        dynamic_cast<structured_control_flow::Block*>(&for_j_opt->root().at(1).first);
+    EXPECT_TRUE(block_einsum);
+    EXPECT_EQ(block_einsum->dataflow().nodes().size(), 4);
+    data_flow::LibraryNode* libnode;
+    for (auto& node : block_einsum->dataflow().nodes()) {
+        if ((libnode = dynamic_cast<data_flow::LibraryNode*>(&node))) break;
+    }
+    EXPECT_TRUE(libnode);
+    auto* einsum_node = dynamic_cast<einsum::EinsumNode*>(libnode);
+    EXPECT_TRUE(einsum_node);
+    EXPECT_EQ(einsum_node->outputs(), std::vector<std::string>({"_out"}));
+    EXPECT_EQ(einsum_node->inputs(), std::vector<std::string>({"_in0", "_out"}));
+    EXPECT_EQ(einsum_node->maps().size(), 0);
+    EXPECT_TRUE(subsets_eq(einsum_node->out_indices(), subsets.at("B")));
+    auto conn2cont = get_conn2cont(*block_einsum, *libnode);
+    EXPECT_EQ(einsum_node->in_indices().size(), 2);
+    EXPECT_TRUE(subsets_eq(einsum_node->in_indices(0), subsets.at(conn2cont.at("_in0"))));
+    EXPECT_TRUE(subsets_eq(einsum_node->in_indices(1), subsets.at(conn2cont.at("_out"))));
 }
 
 TEST(EinsumLift, MatrixCopy_2) {
@@ -641,27 +1141,128 @@ TEST(EinsumLift, MatrixCopy_2) {
 
     gen_for(j, J, body_i);
 
+    const std::unordered_map<std::string, data_flow::Subset> subsets = {
+        {"A", {indvar_i, indvar_j}}, {"B", {indvar_i, indvar_j}}};
+
     auto& block1 = builder.add_block(body_j);
     auto& A = builder.add_access(block1, "A");
     auto& B1 = builder.add_access(block1, "B");
     auto& B2 = builder.add_access(block1, "B");
     auto& tasklet1 = builder.add_tasklet(block1, data_flow::TaskletCode::assign,
                                          {"_out", base_desc}, {{"0.0", base_desc}});
-    builder.add_memlet(block1, tasklet1, "_out", B1, "void", {indvar_i, indvar_j});
+    builder.add_memlet(block1, tasklet1, "_out", B1, "void", subsets.at("B"));
     auto& tasklet2 = builder.add_tasklet(block1, data_flow::TaskletCode::add, {"_out", base_desc},
                                          {{"_in1", base_desc}, {"_in2", base_desc}});
-    builder.add_memlet(block1, A, "void", tasklet2, "_in1", {indvar_i, indvar_j});
-    builder.add_memlet(block1, B1, "void", tasklet2, "_in2", {indvar_i, indvar_j});
-    builder.add_memlet(block1, tasklet2, "_out", B2, "void", {indvar_i, indvar_j});
+    builder.add_memlet(block1, A, "void", tasklet2, "_in1", subsets.at("A"));
+    builder.add_memlet(block1, B1, "void", tasklet2, "_in2", subsets.at("B"));
+    builder.add_memlet(block1, tasklet2, "_out", B2, "void", subsets.at("B"));
 
     auto sdfg = builder.move();
 
     builder::StructuredSDFGBuilder builder_opt(sdfg);
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
 
-    transformations::EinsumLift transformation(tasklet1, {}, block1);
+    transformations::EinsumLift transformation({}, block1);
     EXPECT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
     transformation.apply(builder_opt, analysis_manager);
+
+    auto& root_opt = builder_opt.subject().root();
+    EXPECT_EQ(root_opt.size(), 1);
+    auto* for_i_opt = dynamic_cast<structured_control_flow::For*>(&root_opt.at(0).first);
+    EXPECT_TRUE(for_i_opt);
+    EXPECT_EQ(for_i_opt, &for_i);
+    EXPECT_EQ(for_i_opt->root().size(), 1);
+    auto* for_j_opt = dynamic_cast<structured_control_flow::For*>(&for_i_opt->root().at(0).first);
+    EXPECT_TRUE(for_j_opt);
+    EXPECT_EQ(for_j_opt, &for_j);
+    EXPECT_EQ(for_j_opt->root().size(), 1);
+    auto* block_einsum =
+        dynamic_cast<structured_control_flow::Block*>(&for_j_opt->root().at(0).first);
+    EXPECT_TRUE(block_einsum);
+    EXPECT_EQ(block_einsum->dataflow().nodes().size(), 3);
+    data_flow::LibraryNode* libnode;
+    for (auto& node : block_einsum->dataflow().nodes()) {
+        if ((libnode = dynamic_cast<data_flow::LibraryNode*>(&node))) break;
+    }
+    EXPECT_TRUE(libnode);
+    auto* einsum_node = dynamic_cast<einsum::EinsumNode*>(libnode);
+    EXPECT_TRUE(einsum_node);
+    EXPECT_EQ(einsum_node->outputs(), std::vector<std::string>({"_out"}));
+    EXPECT_EQ(einsum_node->inputs(), std::vector<std::string>({"_in0"}));
+    EXPECT_EQ(einsum_node->maps().size(), 0);
+    EXPECT_TRUE(subsets_eq(einsum_node->out_indices(), subsets.at("B")));
+    EXPECT_EQ(einsum_node->in_indices().size(), 1);
+    EXPECT_TRUE(subsets_eq(einsum_node->in_indices(0), subsets.at("A")));
+}
+
+TEST(EinsumLift, MatrixCopy_3) {
+    builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
+
+    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    builder.add_container("i", sym_desc);
+    builder.add_container("I", sym_desc, true);
+    builder.add_container("j", sym_desc);
+    builder.add_container("J", sym_desc, true);
+
+    types::Scalar base_desc(types::PrimitiveType::Float);
+    types::Pointer desc(base_desc);
+    types::Pointer desc2(*desc.clone());
+    builder.add_container("A", desc2, true);
+    builder.add_container("B", desc2, true);
+
+    auto& root = builder.subject().root();
+
+    gen_for(i, I, root);
+
+    gen_for(j, J, body_i);
+
+    const std::unordered_map<std::string, data_flow::Subset> subsets = {
+        {"A", {indvar_i, indvar_j}}, {"B", {indvar_i, indvar_j}}};
+
+    auto& block1 = builder.add_block(body_j);
+    auto& A = builder.add_access(block1, "A");
+    auto& B = builder.add_access(block1, "B");
+    auto& tasklet1 = builder.add_tasklet(block1, data_flow::TaskletCode::assign,
+                                         {"_out", base_desc}, {{"_in", base_desc}});
+    builder.add_memlet(block1, A, "void", tasklet1, "_in", subsets.at("A"));
+    builder.add_memlet(block1, tasklet1, "_out", B, "void", subsets.at("B"));
+
+    auto sdfg = builder.move();
+
+    builder::StructuredSDFGBuilder builder_opt(sdfg);
+    analysis::AnalysisManager analysis_manager(builder_opt.subject());
+
+    transformations::EinsumLift transformation({}, block1);
+    EXPECT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
+    transformation.apply(builder_opt, analysis_manager);
+
+    auto& root_opt = builder_opt.subject().root();
+    EXPECT_EQ(root_opt.size(), 1);
+    auto* for_i_opt = dynamic_cast<structured_control_flow::For*>(&root_opt.at(0).first);
+    EXPECT_TRUE(for_i_opt);
+    EXPECT_EQ(for_i_opt, &for_i);
+    EXPECT_EQ(for_i_opt->root().size(), 1);
+    auto* for_j_opt = dynamic_cast<structured_control_flow::For*>(&for_i_opt->root().at(0).first);
+    EXPECT_TRUE(for_j_opt);
+    EXPECT_EQ(for_j_opt, &for_j);
+    EXPECT_EQ(for_j_opt->root().size(), 1);
+    auto* block_einsum =
+        dynamic_cast<structured_control_flow::Block*>(&for_j_opt->root().at(0).first);
+    EXPECT_TRUE(block_einsum);
+    EXPECT_EQ(block_einsum->dataflow().nodes().size(), 3);
+    data_flow::LibraryNode* libnode;
+    for (auto& node : block_einsum->dataflow().nodes()) {
+        if ((libnode = dynamic_cast<data_flow::LibraryNode*>(&node))) break;
+    }
+    EXPECT_TRUE(libnode);
+    auto* einsum_node = dynamic_cast<einsum::EinsumNode*>(libnode);
+    EXPECT_TRUE(einsum_node);
+    EXPECT_EQ(einsum_node->outputs(), std::vector<std::string>({"_out"}));
+    EXPECT_EQ(einsum_node->inputs(), std::vector<std::string>({"_in0"}));
+    EXPECT_EQ(einsum_node->maps().size(), 0);
+    EXPECT_TRUE(subsets_eq(einsum_node->out_indices(), subsets.at("B")));
+    EXPECT_EQ(einsum_node->in_indices().size(), 1);
+    EXPECT_TRUE(subsets_eq(einsum_node->in_indices(0), subsets.at("A")));
 }
 
 TEST(EinsumLift, MatrixTranspose_1) {
@@ -691,24 +1292,61 @@ TEST(EinsumLift, MatrixTranspose_1) {
                                          {"_out", base_desc}, {{"0.0", base_desc}});
     builder.add_memlet(block1, tasklet1, "_out", B1, "void", {indvar_j, indvar_i});
 
+    const std::unordered_map<std::string, data_flow::Subset> subsets = {
+        {"A", {indvar_i, indvar_j}}, {"B", {indvar_j, indvar_i}}};
+
     auto& block2 = builder.add_block(body_i);
     auto& A = builder.add_access(block2, "A");
     auto& B2 = builder.add_access(block2, "B");
     auto& B3 = builder.add_access(block2, "B");
     auto& tasklet2 = builder.add_tasklet(block2, data_flow::TaskletCode::add, {"_out", base_desc},
                                          {{"_in1", base_desc}, {"_in2", base_desc}});
-    builder.add_memlet(block2, A, "void", tasklet2, "_in1", {indvar_i, indvar_j});
-    builder.add_memlet(block2, B2, "void", tasklet2, "_in2", {indvar_j, indvar_i});
-    builder.add_memlet(block2, tasklet2, "_out", B3, "void", {indvar_j, indvar_i});
+    builder.add_memlet(block2, A, "void", tasklet2, "_in1", subsets.at("A"));
+    builder.add_memlet(block2, B2, "void", tasklet2, "_in2", subsets.at("B"));
+    builder.add_memlet(block2, tasklet2, "_out", B3, "void", subsets.at("B"));
 
     auto sdfg = builder.move();
 
     builder::StructuredSDFGBuilder builder_opt(sdfg);
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
 
-    transformations::EinsumLift transformation(tasklet1, {}, block2);
+    transformations::EinsumLift transformation({}, block2);
     EXPECT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
     transformation.apply(builder_opt, analysis_manager);
+
+    auto& root_opt = builder_opt.subject().root();
+    EXPECT_EQ(root_opt.size(), 1);
+    auto* for_j_opt = dynamic_cast<structured_control_flow::For*>(&root_opt.at(0).first);
+    EXPECT_TRUE(for_j_opt);
+    EXPECT_EQ(for_j_opt, &for_j);
+    EXPECT_EQ(for_j_opt->root().size(), 1);
+    auto* for_i_opt = dynamic_cast<structured_control_flow::For*>(&for_j_opt->root().at(0).first);
+    EXPECT_TRUE(for_i_opt);
+    EXPECT_EQ(for_i_opt, &for_i);
+    EXPECT_EQ(for_i_opt->root().size(), 2);
+    auto* block1_opt =
+        dynamic_cast<structured_control_flow::Block*>(&for_i_opt->root().at(0).first);
+    EXPECT_TRUE(block1_opt);
+    EXPECT_EQ(block1_opt, &block1);
+    auto* block_einsum =
+        dynamic_cast<structured_control_flow::Block*>(&for_i_opt->root().at(1).first);
+    EXPECT_TRUE(block_einsum);
+    EXPECT_EQ(block_einsum->dataflow().nodes().size(), 4);
+    data_flow::LibraryNode* libnode;
+    for (auto& node : block_einsum->dataflow().nodes()) {
+        if ((libnode = dynamic_cast<data_flow::LibraryNode*>(&node))) break;
+    }
+    EXPECT_TRUE(libnode);
+    auto* einsum_node = dynamic_cast<einsum::EinsumNode*>(libnode);
+    EXPECT_TRUE(einsum_node);
+    EXPECT_EQ(einsum_node->outputs(), std::vector<std::string>({"_out"}));
+    EXPECT_EQ(einsum_node->inputs(), std::vector<std::string>({"_in0", "_out"}));
+    EXPECT_EQ(einsum_node->maps().size(), 0);
+    EXPECT_TRUE(subsets_eq(einsum_node->out_indices(), subsets.at("B")));
+    auto conn2cont = get_conn2cont(*block_einsum, *libnode);
+    EXPECT_EQ(einsum_node->in_indices().size(), 2);
+    EXPECT_TRUE(subsets_eq(einsum_node->in_indices(0), subsets.at(conn2cont.at("_in0"))));
+    EXPECT_TRUE(subsets_eq(einsum_node->in_indices(1), subsets.at(conn2cont.at("_out"))));
 }
 
 TEST(EinsumLift, MatrixTranspose_2) {
@@ -732,27 +1370,128 @@ TEST(EinsumLift, MatrixTranspose_2) {
 
     gen_for(i, I, body_j);
 
+    const std::unordered_map<std::string, data_flow::Subset> subsets = {
+        {"A", {indvar_i, indvar_j}}, {"B", {indvar_j, indvar_i}}};
+
     auto& block1 = builder.add_block(body_i);
     auto& A = builder.add_access(block1, "A");
     auto& B1 = builder.add_access(block1, "B");
     auto& B2 = builder.add_access(block1, "B");
     auto& tasklet1 = builder.add_tasklet(block1, data_flow::TaskletCode::assign,
                                          {"_out", base_desc}, {{"0.0", base_desc}});
-    builder.add_memlet(block1, tasklet1, "_out", B1, "void", {indvar_j, indvar_i});
+    builder.add_memlet(block1, tasklet1, "_out", B1, "void", subsets.at("B"));
     auto& tasklet2 = builder.add_tasklet(block1, data_flow::TaskletCode::add, {"_out", base_desc},
                                          {{"_in1", base_desc}, {"_in2", base_desc}});
-    builder.add_memlet(block1, A, "void", tasklet2, "_in1", {indvar_i, indvar_j});
-    builder.add_memlet(block1, B1, "void", tasklet2, "_in2", {indvar_j, indvar_i});
-    builder.add_memlet(block1, tasklet2, "_out", B2, "void", {indvar_j, indvar_i});
+    builder.add_memlet(block1, A, "void", tasklet2, "_in1", subsets.at("A"));
+    builder.add_memlet(block1, B1, "void", tasklet2, "_in2", subsets.at("B"));
+    builder.add_memlet(block1, tasklet2, "_out", B2, "void", subsets.at("B"));
 
     auto sdfg = builder.move();
 
     builder::StructuredSDFGBuilder builder_opt(sdfg);
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
 
-    transformations::EinsumLift transformation(tasklet1, {}, block1);
+    transformations::EinsumLift transformation({}, block1);
     EXPECT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
     transformation.apply(builder_opt, analysis_manager);
+
+    auto& root_opt = builder_opt.subject().root();
+    EXPECT_EQ(root_opt.size(), 1);
+    auto* for_j_opt = dynamic_cast<structured_control_flow::For*>(&root_opt.at(0).first);
+    EXPECT_TRUE(for_j_opt);
+    EXPECT_EQ(for_j_opt, &for_j);
+    EXPECT_EQ(for_j_opt->root().size(), 1);
+    auto* for_i_opt = dynamic_cast<structured_control_flow::For*>(&for_j_opt->root().at(0).first);
+    EXPECT_TRUE(for_i_opt);
+    EXPECT_EQ(for_i_opt, &for_i);
+    EXPECT_EQ(for_i_opt->root().size(), 1);
+    auto* block_einsum =
+        dynamic_cast<structured_control_flow::Block*>(&for_i_opt->root().at(0).first);
+    EXPECT_TRUE(block_einsum);
+    EXPECT_EQ(block_einsum->dataflow().nodes().size(), 3);
+    data_flow::LibraryNode* libnode;
+    for (auto& node : block_einsum->dataflow().nodes()) {
+        if ((libnode = dynamic_cast<data_flow::LibraryNode*>(&node))) break;
+    }
+    EXPECT_TRUE(libnode);
+    auto* einsum_node = dynamic_cast<einsum::EinsumNode*>(libnode);
+    EXPECT_TRUE(einsum_node);
+    EXPECT_EQ(einsum_node->outputs(), std::vector<std::string>({"_out"}));
+    EXPECT_EQ(einsum_node->inputs(), std::vector<std::string>({"_in0"}));
+    EXPECT_EQ(einsum_node->maps().size(), 0);
+    EXPECT_TRUE(subsets_eq(einsum_node->out_indices(), subsets.at("B")));
+    EXPECT_EQ(einsum_node->in_indices().size(), 1);
+    EXPECT_TRUE(subsets_eq(einsum_node->in_indices(0), subsets.at("A")));
+}
+
+TEST(EinsumLift, MatrixTranspose_3) {
+    builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
+
+    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    builder.add_container("i", sym_desc);
+    builder.add_container("I", sym_desc, true);
+    builder.add_container("j", sym_desc);
+    builder.add_container("J", sym_desc, true);
+
+    types::Scalar base_desc(types::PrimitiveType::Float);
+    types::Pointer desc(base_desc);
+    types::Pointer desc2(*desc.clone());
+    builder.add_container("A", desc2, true);
+    builder.add_container("B", desc2, true);
+
+    auto& root = builder.subject().root();
+
+    gen_for(j, J, root);
+
+    gen_for(i, I, body_j);
+
+    const std::unordered_map<std::string, data_flow::Subset> subsets = {
+        {"A", {indvar_i, indvar_j}}, {"B", {indvar_j, indvar_i}}};
+
+    auto& block1 = builder.add_block(body_i);
+    auto& A = builder.add_access(block1, "A");
+    auto& B = builder.add_access(block1, "B");
+    auto& tasklet1 = builder.add_tasklet(block1, data_flow::TaskletCode::assign,
+                                         {"_out", base_desc}, {{"_in", base_desc}});
+    builder.add_memlet(block1, A, "void", tasklet1, "_in", subsets.at("A"));
+    builder.add_memlet(block1, tasklet1, "_out", B, "void", subsets.at("B"));
+
+    auto sdfg = builder.move();
+
+    builder::StructuredSDFGBuilder builder_opt(sdfg);
+    analysis::AnalysisManager analysis_manager(builder_opt.subject());
+
+    transformations::EinsumLift transformation({}, block1);
+    EXPECT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
+    transformation.apply(builder_opt, analysis_manager);
+
+    auto& root_opt = builder_opt.subject().root();
+    EXPECT_EQ(root_opt.size(), 1);
+    auto* for_j_opt = dynamic_cast<structured_control_flow::For*>(&root_opt.at(0).first);
+    EXPECT_TRUE(for_j_opt);
+    EXPECT_EQ(for_j_opt, &for_j);
+    EXPECT_EQ(for_j_opt->root().size(), 1);
+    auto* for_i_opt = dynamic_cast<structured_control_flow::For*>(&for_j_opt->root().at(0).first);
+    EXPECT_TRUE(for_i_opt);
+    EXPECT_EQ(for_i_opt, &for_i);
+    EXPECT_EQ(for_i_opt->root().size(), 1);
+    auto* block_einsum =
+        dynamic_cast<structured_control_flow::Block*>(&for_i_opt->root().at(0).first);
+    EXPECT_TRUE(block_einsum);
+    EXPECT_EQ(block_einsum->dataflow().nodes().size(), 3);
+    data_flow::LibraryNode* libnode;
+    for (auto& node : block_einsum->dataflow().nodes()) {
+        if ((libnode = dynamic_cast<data_flow::LibraryNode*>(&node))) break;
+    }
+    EXPECT_TRUE(libnode);
+    auto* einsum_node = dynamic_cast<einsum::EinsumNode*>(libnode);
+    EXPECT_TRUE(einsum_node);
+    EXPECT_EQ(einsum_node->outputs(), std::vector<std::string>({"_out"}));
+    EXPECT_EQ(einsum_node->inputs(), std::vector<std::string>({"_in0"}));
+    EXPECT_EQ(einsum_node->maps().size(), 0);
+    EXPECT_TRUE(subsets_eq(einsum_node->out_indices(), subsets.at("B")));
+    EXPECT_EQ(einsum_node->in_indices().size(), 1);
+    EXPECT_TRUE(subsets_eq(einsum_node->in_indices(0), subsets.at("A")));
 }
 
 TEST(EinsumLift, DotProduct_1) {
@@ -779,6 +1518,9 @@ TEST(EinsumLift, DotProduct_1) {
 
     gen_for(i, I, root);
 
+    const std::unordered_map<std::string, data_flow::Subset> subsets = {
+        {"a", {indvar_i}}, {"b", {indvar_i}}, {"c", {}}};
+
     auto& block2 = builder.add_block(body_i);
     auto& a = builder.add_access(block2, "a");
     auto& b = builder.add_access(block2, "b");
@@ -787,23 +1529,50 @@ TEST(EinsumLift, DotProduct_1) {
     auto& tmp = builder.add_access(block2, "tmp");
     auto& tasklet2 = builder.add_tasklet(block2, data_flow::TaskletCode::mul, {"_out", base_desc},
                                          {{"_in1", base_desc}, {"_in2", base_desc}});
-    builder.add_memlet(block2, a, "void", tasklet2, "_in1", {indvar_i});
-    builder.add_memlet(block2, b, "void", tasklet2, "_in2", {indvar_i});
+    builder.add_memlet(block2, a, "void", tasklet2, "_in1", subsets.at("a"));
+    builder.add_memlet(block2, b, "void", tasklet2, "_in2", subsets.at("b"));
     builder.add_memlet(block2, tasklet2, "_out", tmp, "void", {});
     auto& tasklet3 = builder.add_tasklet(block2, data_flow::TaskletCode::add, {"_out", base_desc},
                                          {{"_in1", base_desc}, {"_in2", base_desc}});
-    builder.add_memlet(block2, c2, "void", tasklet3, "_in1", {});
+    builder.add_memlet(block2, c2, "void", tasklet3, "_in1", subsets.at("c"));
     builder.add_memlet(block2, tmp, "void", tasklet3, "_in2", {});
-    builder.add_memlet(block2, tasklet3, "_out", c3, "void", {});
+    builder.add_memlet(block2, tasklet3, "_out", c3, "void", subsets.at("c"));
 
     auto sdfg = builder.move();
 
     builder::StructuredSDFGBuilder builder_opt(sdfg);
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
 
-    transformations::EinsumLift transformation(tasklet1, {for_i}, block2);
+    transformations::EinsumLift transformation({for_i}, block2);
     EXPECT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
     transformation.apply(builder_opt, analysis_manager);
+
+    auto& root_opt = builder_opt.subject().root();
+    EXPECT_EQ(root_opt.size(), 2);
+    auto* block1_opt = dynamic_cast<structured_control_flow::Block*>(&root_opt.at(0).first);
+    EXPECT_TRUE(block1_opt);
+    EXPECT_EQ(block1_opt, &block1);
+    auto* block_einsum = dynamic_cast<structured_control_flow::Block*>(&root_opt.at(1).first);
+    EXPECT_TRUE(block_einsum);
+    EXPECT_EQ(block_einsum->dataflow().nodes().size(), 5);
+    data_flow::LibraryNode* libnode;
+    for (auto& node : block_einsum->dataflow().nodes()) {
+        if ((libnode = dynamic_cast<data_flow::LibraryNode*>(&node))) break;
+    }
+    EXPECT_TRUE(libnode);
+    auto* einsum_node = dynamic_cast<einsum::EinsumNode*>(libnode);
+    EXPECT_TRUE(einsum_node);
+    EXPECT_EQ(einsum_node->outputs(), std::vector<std::string>({"_out"}));
+    EXPECT_EQ(einsum_node->inputs(), std::vector<std::string>({"_in0", "_in1", "_out"}));
+    EXPECT_EQ(einsum_node->maps().size(), 1);
+    EXPECT_TRUE(symbolic::eq(einsum_node->map(0).first, indvar_i));
+    EXPECT_TRUE(symbolic::eq(einsum_node->map(0).second, bound_i));
+    EXPECT_TRUE(subsets_eq(einsum_node->out_indices(), subsets.at("c")));
+    auto conn2cont = get_conn2cont(*block_einsum, *libnode);
+    EXPECT_EQ(einsum_node->in_indices().size(), 3);
+    EXPECT_TRUE(subsets_eq(einsum_node->in_indices(0), subsets.at(conn2cont.at("_in0"))));
+    EXPECT_TRUE(subsets_eq(einsum_node->in_indices(1), subsets.at(conn2cont.at("_in1"))));
+    EXPECT_TRUE(subsets_eq(einsum_node->in_indices(2), subsets.at(conn2cont.at("_out"))));
 }
 
 TEST(EinsumLift, DotProduct_2) {
@@ -830,6 +1599,9 @@ TEST(EinsumLift, DotProduct_2) {
 
     gen_for(i, I, root);
 
+    const std::unordered_map<std::string, data_flow::Subset> subsets = {
+        {"a", {indvar_i}}, {"b", {indvar_i}}, {"c", {symbolic::zero()}}};
+
     auto& block2 = builder.add_block(body_i);
     auto& a = builder.add_access(block2, "a");
     auto& b = builder.add_access(block2, "b");
@@ -838,23 +1610,50 @@ TEST(EinsumLift, DotProduct_2) {
     auto& tmp = builder.add_access(block2, "tmp");
     auto& tasklet2 = builder.add_tasklet(block2, data_flow::TaskletCode::mul, {"_out", base_desc},
                                          {{"_in1", base_desc}, {"_in2", base_desc}});
-    builder.add_memlet(block2, a, "void", tasklet2, "_in1", {indvar_i});
-    builder.add_memlet(block2, b, "void", tasklet2, "_in2", {indvar_i});
+    builder.add_memlet(block2, a, "void", tasklet2, "_in1", subsets.at("a"));
+    builder.add_memlet(block2, b, "void", tasklet2, "_in2", subsets.at("b"));
     builder.add_memlet(block2, tasklet2, "_out", tmp, "void", {});
     auto& tasklet3 = builder.add_tasklet(block2, data_flow::TaskletCode::add, {"_out", base_desc},
                                          {{"_in1", base_desc}, {"_in2", base_desc}});
-    builder.add_memlet(block2, c2, "void", tasklet3, "_in1", {symbolic::zero()});
+    builder.add_memlet(block2, c2, "void", tasklet3, "_in1", subsets.at("c"));
     builder.add_memlet(block2, tmp, "void", tasklet3, "_in2", {});
-    builder.add_memlet(block2, tasklet3, "_out", c3, "void", {symbolic::zero()});
+    builder.add_memlet(block2, tasklet3, "_out", c3, "void", subsets.at("c"));
 
     auto sdfg = builder.move();
 
     builder::StructuredSDFGBuilder builder_opt(sdfg);
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
 
-    transformations::EinsumLift transformation(tasklet1, {for_i}, block2);
+    transformations::EinsumLift transformation({for_i}, block2);
     EXPECT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
     transformation.apply(builder_opt, analysis_manager);
+
+    auto& root_opt = builder_opt.subject().root();
+    EXPECT_EQ(root_opt.size(), 2);
+    auto* block1_opt = dynamic_cast<structured_control_flow::Block*>(&root_opt.at(0).first);
+    EXPECT_TRUE(block1_opt);
+    EXPECT_EQ(block1_opt, &block1);
+    auto* block_einsum = dynamic_cast<structured_control_flow::Block*>(&root_opt.at(1).first);
+    EXPECT_TRUE(block_einsum);
+    EXPECT_EQ(block_einsum->dataflow().nodes().size(), 5);
+    data_flow::LibraryNode* libnode;
+    for (auto& node : block_einsum->dataflow().nodes()) {
+        if ((libnode = dynamic_cast<data_flow::LibraryNode*>(&node))) break;
+    }
+    EXPECT_TRUE(libnode);
+    auto* einsum_node = dynamic_cast<einsum::EinsumNode*>(libnode);
+    EXPECT_TRUE(einsum_node);
+    EXPECT_EQ(einsum_node->outputs(), std::vector<std::string>({"_out"}));
+    EXPECT_EQ(einsum_node->inputs(), std::vector<std::string>({"_in0", "_in1", "_out"}));
+    EXPECT_EQ(einsum_node->maps().size(), 1);
+    EXPECT_TRUE(symbolic::eq(einsum_node->map(0).first, indvar_i));
+    EXPECT_TRUE(symbolic::eq(einsum_node->map(0).second, bound_i));
+    EXPECT_TRUE(subsets_eq(einsum_node->out_indices(), subsets.at("c")));
+    auto conn2cont = get_conn2cont(*block_einsum, *libnode);
+    EXPECT_EQ(einsum_node->in_indices().size(), 3);
+    EXPECT_TRUE(subsets_eq(einsum_node->in_indices(0), subsets.at(conn2cont.at("_in0"))));
+    EXPECT_TRUE(subsets_eq(einsum_node->in_indices(1), subsets.at(conn2cont.at("_in1"))));
+    EXPECT_TRUE(subsets_eq(einsum_node->in_indices(2), subsets.at(conn2cont.at("_out"))));
 }
 
 TEST(EinsumLift, DotProduct_3) {
@@ -880,6 +1679,9 @@ TEST(EinsumLift, DotProduct_3) {
 
     gen_for(i, I, root);
 
+    const std::unordered_map<std::string, data_flow::Subset> subsets = {
+        {"a", {indvar_i}}, {"b", {indvar_i}}, {"c", {}}};
+
     auto& block2 = builder.add_block(body_i);
     auto& a = builder.add_access(block2, "a");
     auto& b = builder.add_access(block2, "b");
@@ -888,19 +1690,46 @@ TEST(EinsumLift, DotProduct_3) {
     auto& tasklet2 =
         builder.add_tasklet(block2, data_flow::TaskletCode::fma, {"_out", base_desc},
                             {{"_in1", base_desc}, {"_in2", base_desc}, {"_in3", base_desc}});
-    builder.add_memlet(block2, a, "void", tasklet2, "_in1", {indvar_i});
-    builder.add_memlet(block2, b, "void", tasklet2, "_in2", {indvar_i});
-    builder.add_memlet(block2, c2, "void", tasklet2, "_in3", {});
-    builder.add_memlet(block2, tasklet2, "_out", c3, "void", {});
+    builder.add_memlet(block2, a, "void", tasklet2, "_in1", subsets.at("a"));
+    builder.add_memlet(block2, b, "void", tasklet2, "_in2", subsets.at("b"));
+    builder.add_memlet(block2, c2, "void", tasklet2, "_in3", subsets.at("c"));
+    builder.add_memlet(block2, tasklet2, "_out", c3, "void", subsets.at("c"));
 
     auto sdfg = builder.move();
 
     builder::StructuredSDFGBuilder builder_opt(sdfg);
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
 
-    transformations::EinsumLift transformation(tasklet1, {for_i}, block2);
+    transformations::EinsumLift transformation({for_i}, block2);
     EXPECT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
     transformation.apply(builder_opt, analysis_manager);
+
+    auto& root_opt = builder_opt.subject().root();
+    EXPECT_EQ(root_opt.size(), 2);
+    auto* block1_opt = dynamic_cast<structured_control_flow::Block*>(&root_opt.at(0).first);
+    EXPECT_TRUE(block1_opt);
+    EXPECT_EQ(block1_opt, &block1);
+    auto* block_einsum = dynamic_cast<structured_control_flow::Block*>(&root_opt.at(1).first);
+    EXPECT_TRUE(block_einsum);
+    EXPECT_EQ(block_einsum->dataflow().nodes().size(), 5);
+    data_flow::LibraryNode* libnode;
+    for (auto& node : block_einsum->dataflow().nodes()) {
+        if ((libnode = dynamic_cast<data_flow::LibraryNode*>(&node))) break;
+    }
+    EXPECT_TRUE(libnode);
+    auto* einsum_node = dynamic_cast<einsum::EinsumNode*>(libnode);
+    EXPECT_TRUE(einsum_node);
+    EXPECT_EQ(einsum_node->outputs(), std::vector<std::string>({"_out"}));
+    EXPECT_EQ(einsum_node->inputs(), std::vector<std::string>({"_in0", "_in1", "_out"}));
+    EXPECT_EQ(einsum_node->maps().size(), 1);
+    EXPECT_TRUE(symbolic::eq(einsum_node->map(0).first, indvar_i));
+    EXPECT_TRUE(symbolic::eq(einsum_node->map(0).second, bound_i));
+    EXPECT_TRUE(subsets_eq(einsum_node->out_indices(), subsets.at("c")));
+    auto conn2cont = get_conn2cont(*block_einsum, *libnode);
+    EXPECT_EQ(einsum_node->in_indices().size(), 3);
+    EXPECT_TRUE(subsets_eq(einsum_node->in_indices(0), subsets.at(conn2cont.at("_in0"))));
+    EXPECT_TRUE(subsets_eq(einsum_node->in_indices(1), subsets.at(conn2cont.at("_in1"))));
+    EXPECT_TRUE(subsets_eq(einsum_node->in_indices(2), subsets.at(conn2cont.at("_out"))));
 }
 
 TEST(EinsumLift, DotProduct_4) {
@@ -926,6 +1755,9 @@ TEST(EinsumLift, DotProduct_4) {
 
     gen_for(i, I, root);
 
+    const std::unordered_map<std::string, data_flow::Subset> subsets = {
+        {"a", {indvar_i}}, {"b", {indvar_i}}, {"c", {symbolic::zero()}}};
+
     auto& block2 = builder.add_block(body_i);
     auto& a = builder.add_access(block2, "a");
     auto& b = builder.add_access(block2, "b");
@@ -934,19 +1766,46 @@ TEST(EinsumLift, DotProduct_4) {
     auto& tasklet2 =
         builder.add_tasklet(block2, data_flow::TaskletCode::fma, {"_out", base_desc},
                             {{"_in1", base_desc}, {"_in2", base_desc}, {"_in3", base_desc}});
-    builder.add_memlet(block2, a, "void", tasklet2, "_in1", {indvar_i});
-    builder.add_memlet(block2, b, "void", tasklet2, "_in2", {indvar_i});
-    builder.add_memlet(block2, c2, "void", tasklet2, "_in3", {symbolic::zero()});
-    builder.add_memlet(block2, tasklet2, "_out", c3, "void", {symbolic::zero()});
+    builder.add_memlet(block2, a, "void", tasklet2, "_in1", subsets.at("a"));
+    builder.add_memlet(block2, b, "void", tasklet2, "_in2", subsets.at("b"));
+    builder.add_memlet(block2, c2, "void", tasklet2, "_in3", subsets.at("c"));
+    builder.add_memlet(block2, tasklet2, "_out", c3, "void", subsets.at("c"));
 
     auto sdfg = builder.move();
 
     builder::StructuredSDFGBuilder builder_opt(sdfg);
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
 
-    transformations::EinsumLift transformation(tasklet1, {for_i}, block2);
+    transformations::EinsumLift transformation({for_i}, block2);
     EXPECT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
     transformation.apply(builder_opt, analysis_manager);
+
+    auto& root_opt = builder_opt.subject().root();
+    EXPECT_EQ(root_opt.size(), 2);
+    auto* block1_opt = dynamic_cast<structured_control_flow::Block*>(&root_opt.at(0).first);
+    EXPECT_TRUE(block1_opt);
+    EXPECT_EQ(block1_opt, &block1);
+    auto* block_einsum = dynamic_cast<structured_control_flow::Block*>(&root_opt.at(1).first);
+    EXPECT_TRUE(block_einsum);
+    EXPECT_EQ(block_einsum->dataflow().nodes().size(), 5);
+    data_flow::LibraryNode* libnode;
+    for (auto& node : block_einsum->dataflow().nodes()) {
+        if ((libnode = dynamic_cast<data_flow::LibraryNode*>(&node))) break;
+    }
+    EXPECT_TRUE(libnode);
+    auto* einsum_node = dynamic_cast<einsum::EinsumNode*>(libnode);
+    EXPECT_TRUE(einsum_node);
+    EXPECT_EQ(einsum_node->outputs(), std::vector<std::string>({"_out"}));
+    EXPECT_EQ(einsum_node->inputs(), std::vector<std::string>({"_in0", "_in1", "_out"}));
+    EXPECT_EQ(einsum_node->maps().size(), 1);
+    EXPECT_TRUE(symbolic::eq(einsum_node->map(0).first, indvar_i));
+    EXPECT_TRUE(symbolic::eq(einsum_node->map(0).second, bound_i));
+    EXPECT_TRUE(subsets_eq(einsum_node->out_indices(), subsets.at("c")));
+    auto conn2cont = get_conn2cont(*block_einsum, *libnode);
+    EXPECT_EQ(einsum_node->in_indices().size(), 3);
+    EXPECT_TRUE(subsets_eq(einsum_node->in_indices(0), subsets.at(conn2cont.at("_in0"))));
+    EXPECT_TRUE(subsets_eq(einsum_node->in_indices(1), subsets.at(conn2cont.at("_in1"))));
+    EXPECT_TRUE(subsets_eq(einsum_node->in_indices(2), subsets.at(conn2cont.at("_out"))));
 }
 
 TEST(EinsumLift, MatrixElementwiseMultiplication_1) {
@@ -980,6 +1839,12 @@ TEST(EinsumLift, MatrixElementwiseMultiplication_1) {
                                          {"_out", base_desc}, {{"0.0", base_desc}});
     builder.add_memlet(block1, tasklet1, "_out", D1, "void", {indvar_i, indvar_j});
 
+    const std::unordered_map<std::string, data_flow::Subset> subsets = {
+        {"A", {indvar_i, indvar_j}},
+        {"B", {indvar_i, indvar_j}},
+        {"C", {indvar_i, indvar_j}},
+        {"D", {indvar_i, indvar_j}}};
+
     auto& block2 = builder.add_block(body_j);
     auto& A = builder.add_access(block2, "A");
     auto& B = builder.add_access(block2, "B");
@@ -990,28 +1855,64 @@ TEST(EinsumLift, MatrixElementwiseMultiplication_1) {
     auto& tmp2 = builder.add_access(block2, "tmp2");
     auto& tasklet2 = builder.add_tasklet(block2, data_flow::TaskletCode::mul, {"_out", base_desc},
                                          {{"_in1", base_desc}, {"_in2", base_desc}});
-    builder.add_memlet(block2, A, "void", tasklet2, "_in1", {indvar_i, indvar_j});
-    builder.add_memlet(block2, B, "void", tasklet2, "_in2", {indvar_i, indvar_j});
+    builder.add_memlet(block2, A, "void", tasklet2, "_in1", subsets.at("A"));
+    builder.add_memlet(block2, B, "void", tasklet2, "_in2", subsets.at("B"));
     builder.add_memlet(block2, tasklet2, "_out", tmp1, "void", {});
     auto& tasklet3 = builder.add_tasklet(block2, data_flow::TaskletCode::mul, {"_out", base_desc},
                                          {{"_in1", base_desc}, {"_in2", base_desc}});
     builder.add_memlet(block2, tmp1, "void", tasklet3, "_in1", {});
-    builder.add_memlet(block2, C, "void", tasklet3, "_in2", {indvar_i, indvar_j});
+    builder.add_memlet(block2, C, "void", tasklet3, "_in2", subsets.at("C"));
     builder.add_memlet(block2, tasklet3, "_out", tmp2, "void", {});
     auto& tasklet4 = builder.add_tasklet(block2, data_flow::TaskletCode::add, {"_out", base_desc},
                                          {{"_in1", base_desc}, {"_in2", base_desc}});
-    builder.add_memlet(block2, D2, "void", tasklet4, "_in1", {indvar_i, indvar_j});
+    builder.add_memlet(block2, D2, "void", tasklet4, "_in1", subsets.at("D"));
     builder.add_memlet(block2, tmp2, "void", tasklet4, "_in2", {});
-    builder.add_memlet(block2, tasklet4, "_out", D3, "void", {indvar_i, indvar_j});
+    builder.add_memlet(block2, tasklet4, "_out", D3, "void", subsets.at("D"));
 
     auto sdfg = builder.move();
 
     builder::StructuredSDFGBuilder builder_opt(sdfg);
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
 
-    transformations::EinsumLift transformation(tasklet1, {}, block2);
+    transformations::EinsumLift transformation({}, block2);
     EXPECT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
     transformation.apply(builder_opt, analysis_manager);
+
+    auto& root_opt = builder_opt.subject().root();
+    EXPECT_EQ(root_opt.size(), 1);
+    auto* for_i_opt = dynamic_cast<structured_control_flow::For*>(&root_opt.at(0).first);
+    EXPECT_TRUE(for_i_opt);
+    EXPECT_EQ(for_i_opt, &for_i);
+    EXPECT_EQ(for_i_opt->root().size(), 1);
+    auto* for_j_opt = dynamic_cast<structured_control_flow::For*>(&for_i_opt->root().at(0).first);
+    EXPECT_TRUE(for_j_opt);
+    EXPECT_EQ(for_j_opt, &for_j);
+    EXPECT_EQ(for_j_opt->root().size(), 2);
+    auto* block1_opt =
+        dynamic_cast<structured_control_flow::Block*>(&for_j_opt->root().at(0).first);
+    EXPECT_TRUE(block1_opt);
+    EXPECT_EQ(block1_opt, &block1);
+    auto* block_einsum =
+        dynamic_cast<structured_control_flow::Block*>(&for_j_opt->root().at(1).first);
+    EXPECT_TRUE(block_einsum);
+    EXPECT_EQ(block_einsum->dataflow().nodes().size(), 6);
+    data_flow::LibraryNode* libnode;
+    for (auto& node : block_einsum->dataflow().nodes()) {
+        if ((libnode = dynamic_cast<data_flow::LibraryNode*>(&node))) break;
+    }
+    EXPECT_TRUE(libnode);
+    auto* einsum_node = dynamic_cast<einsum::EinsumNode*>(libnode);
+    EXPECT_TRUE(einsum_node);
+    EXPECT_EQ(einsum_node->outputs(), std::vector<std::string>({"_out"}));
+    EXPECT_EQ(einsum_node->inputs(), std::vector<std::string>({"_in0", "_in1", "_in2", "_out"}));
+    EXPECT_EQ(einsum_node->maps().size(), 0);
+    EXPECT_TRUE(subsets_eq(einsum_node->out_indices(), subsets.at("D")));
+    auto conn2cont = get_conn2cont(*block_einsum, *libnode);
+    EXPECT_EQ(einsum_node->in_indices().size(), 4);
+    EXPECT_TRUE(subsets_eq(einsum_node->in_indices(0), subsets.at(conn2cont.at("_in0"))));
+    EXPECT_TRUE(subsets_eq(einsum_node->in_indices(1), subsets.at(conn2cont.at("_in1"))));
+    EXPECT_TRUE(subsets_eq(einsum_node->in_indices(2), subsets.at(conn2cont.at("_in2"))));
+    EXPECT_TRUE(subsets_eq(einsum_node->in_indices(3), subsets.at(conn2cont.at("_out"))));
 }
 
 TEST(EinsumLift, MatrixElementwiseMultiplication_2) {
@@ -1039,6 +1940,12 @@ TEST(EinsumLift, MatrixElementwiseMultiplication_2) {
 
     gen_for(j, J, body_i);
 
+    const std::unordered_map<std::string, data_flow::Subset> subsets = {
+        {"A", {indvar_i, indvar_j}},
+        {"B", {indvar_i, indvar_j}},
+        {"C", {indvar_i, indvar_j}},
+        {"D", {indvar_i, indvar_j}}};
+
     auto& block1 = builder.add_block(body_j);
     auto& A = builder.add_access(block1, "A");
     auto& B = builder.add_access(block1, "B");
@@ -1049,31 +1956,62 @@ TEST(EinsumLift, MatrixElementwiseMultiplication_2) {
     auto& tmp2 = builder.add_access(block1, "tmp2");
     auto& tasklet1 = builder.add_tasklet(block1, data_flow::TaskletCode::assign,
                                          {"_out", base_desc}, {{"0.0", base_desc}});
-    builder.add_memlet(block1, tasklet1, "_out", D1, "void", {indvar_i, indvar_j});
+    builder.add_memlet(block1, tasklet1, "_out", D1, "void", subsets.at("D"));
     auto& tasklet2 = builder.add_tasklet(block1, data_flow::TaskletCode::mul, {"_out", base_desc},
                                          {{"_in1", base_desc}, {"_in2", base_desc}});
-    builder.add_memlet(block1, A, "void", tasklet2, "_in1", {indvar_i, indvar_j});
-    builder.add_memlet(block1, B, "void", tasklet2, "_in2", {indvar_i, indvar_j});
+    builder.add_memlet(block1, A, "void", tasklet2, "_in1", subsets.at("A"));
+    builder.add_memlet(block1, B, "void", tasklet2, "_in2", subsets.at("B"));
     builder.add_memlet(block1, tasklet2, "_out", tmp1, "void", {});
     auto& tasklet3 = builder.add_tasklet(block1, data_flow::TaskletCode::mul, {"_out", base_desc},
                                          {{"_in1", base_desc}, {"_in2", base_desc}});
     builder.add_memlet(block1, tmp1, "void", tasklet3, "_in1", {});
-    builder.add_memlet(block1, C, "void", tasklet3, "_in2", {indvar_i, indvar_j});
+    builder.add_memlet(block1, C, "void", tasklet3, "_in2", subsets.at("C"));
     builder.add_memlet(block1, tasklet3, "_out", tmp2, "void", {});
     auto& tasklet4 = builder.add_tasklet(block1, data_flow::TaskletCode::add, {"_out", base_desc},
                                          {{"_in1", base_desc}, {"_in2", base_desc}});
-    builder.add_memlet(block1, D1, "void", tasklet4, "_in1", {indvar_i, indvar_j});
+    builder.add_memlet(block1, D1, "void", tasklet4, "_in1", subsets.at("D"));
     builder.add_memlet(block1, tmp2, "void", tasklet4, "_in2", {});
-    builder.add_memlet(block1, tasklet4, "_out", D2, "void", {indvar_i, indvar_j});
+    builder.add_memlet(block1, tasklet4, "_out", D2, "void", subsets.at("D"));
 
     auto sdfg = builder.move();
 
     builder::StructuredSDFGBuilder builder_opt(sdfg);
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
 
-    transformations::EinsumLift transformation(tasklet1, {}, block1);
+    transformations::EinsumLift transformation({}, block1);
     EXPECT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
     transformation.apply(builder_opt, analysis_manager);
+
+    auto& root_opt = builder_opt.subject().root();
+    EXPECT_EQ(root_opt.size(), 1);
+    auto* for_i_opt = dynamic_cast<structured_control_flow::For*>(&root_opt.at(0).first);
+    EXPECT_TRUE(for_i_opt);
+    EXPECT_EQ(for_i_opt, &for_i);
+    EXPECT_EQ(for_i_opt->root().size(), 1);
+    auto* for_j_opt = dynamic_cast<structured_control_flow::For*>(&for_i_opt->root().at(0).first);
+    EXPECT_TRUE(for_j_opt);
+    EXPECT_EQ(for_j_opt, &for_j);
+    EXPECT_EQ(for_j_opt->root().size(), 1);
+    auto* block_einsum =
+        dynamic_cast<structured_control_flow::Block*>(&for_j_opt->root().at(0).first);
+    EXPECT_TRUE(block_einsum);
+    EXPECT_EQ(block_einsum->dataflow().nodes().size(), 5);
+    data_flow::LibraryNode* libnode;
+    for (auto& node : block_einsum->dataflow().nodes()) {
+        if ((libnode = dynamic_cast<data_flow::LibraryNode*>(&node))) break;
+    }
+    EXPECT_TRUE(libnode);
+    auto* einsum_node = dynamic_cast<einsum::EinsumNode*>(libnode);
+    EXPECT_TRUE(einsum_node);
+    EXPECT_EQ(einsum_node->outputs(), std::vector<std::string>({"_out"}));
+    EXPECT_EQ(einsum_node->inputs(), std::vector<std::string>({"_in0", "_in1", "_in2"}));
+    EXPECT_EQ(einsum_node->maps().size(), 0);
+    EXPECT_TRUE(subsets_eq(einsum_node->out_indices(), subsets.at("B")));
+    auto conn2cont = get_conn2cont(*block_einsum, *libnode);
+    EXPECT_EQ(einsum_node->in_indices().size(), 3);
+    EXPECT_TRUE(subsets_eq(einsum_node->in_indices(0), subsets.at(conn2cont.at("_in0"))));
+    EXPECT_TRUE(subsets_eq(einsum_node->in_indices(1), subsets.at(conn2cont.at("_in1"))));
+    EXPECT_TRUE(subsets_eq(einsum_node->in_indices(2), subsets.at(conn2cont.at("_in2"))));
 }
 
 TEST(EinsumLift, MatrixElementwiseMultiplication_3) {
@@ -1106,6 +2044,12 @@ TEST(EinsumLift, MatrixElementwiseMultiplication_3) {
                                          {"_out", base_desc}, {{"0.0", base_desc}});
     builder.add_memlet(block1, tasklet1, "_out", D1, "void", {indvar_i, indvar_j});
 
+    const std::unordered_map<std::string, data_flow::Subset> subsets = {
+        {"A", {indvar_i, indvar_j}},
+        {"B", {indvar_i, indvar_j}},
+        {"C", {indvar_i, indvar_j}},
+        {"D", {indvar_i, indvar_j}}};
+
     auto& block2 = builder.add_block(body_j);
     auto& A = builder.add_access(block2, "A");
     auto& B = builder.add_access(block2, "B");
@@ -1115,25 +2059,61 @@ TEST(EinsumLift, MatrixElementwiseMultiplication_3) {
     auto& tmp = builder.add_access(block2, "tmp");
     auto& tasklet2 = builder.add_tasklet(block2, data_flow::TaskletCode::mul, {"_out", base_desc},
                                          {{"_in1", base_desc}, {"_in2", base_desc}});
-    builder.add_memlet(block2, A, "void", tasklet2, "_in1", {indvar_i, indvar_j});
-    builder.add_memlet(block2, B, "void", tasklet2, "_in2", {indvar_i, indvar_j});
+    builder.add_memlet(block2, A, "void", tasklet2, "_in1", subsets.at("A"));
+    builder.add_memlet(block2, B, "void", tasklet2, "_in2", subsets.at("B"));
     builder.add_memlet(block2, tasklet2, "_out", tmp, "void", {});
     auto& tasklet3 =
         builder.add_tasklet(block2, data_flow::TaskletCode::fma, {"_out", base_desc},
                             {{"_in1", base_desc}, {"_in2", base_desc}, {"_in3", base_desc}});
     builder.add_memlet(block2, tmp, "void", tasklet3, "_in1", {});
-    builder.add_memlet(block2, C, "void", tasklet3, "_in2", {indvar_i, indvar_j});
-    builder.add_memlet(block2, D2, "void", tasklet3, "_in3", {indvar_i, indvar_j});
-    builder.add_memlet(block2, tasklet3, "_out", D3, "void", {indvar_i, indvar_j});
+    builder.add_memlet(block2, C, "void", tasklet3, "_in2", subsets.at("C"));
+    builder.add_memlet(block2, D2, "void", tasklet3, "_in3", subsets.at("D"));
+    builder.add_memlet(block2, tasklet3, "_out", D3, "void", subsets.at("D"));
 
     auto sdfg = builder.move();
 
     builder::StructuredSDFGBuilder builder_opt(sdfg);
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
 
-    transformations::EinsumLift transformation(tasklet1, {}, block2);
+    transformations::EinsumLift transformation({}, block2);
     EXPECT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
     transformation.apply(builder_opt, analysis_manager);
+
+    auto& root_opt = builder_opt.subject().root();
+    EXPECT_EQ(root_opt.size(), 1);
+    auto* for_i_opt = dynamic_cast<structured_control_flow::For*>(&root_opt.at(0).first);
+    EXPECT_TRUE(for_i_opt);
+    EXPECT_EQ(for_i_opt, &for_i);
+    EXPECT_EQ(for_i_opt->root().size(), 1);
+    auto* for_j_opt = dynamic_cast<structured_control_flow::For*>(&for_i_opt->root().at(0).first);
+    EXPECT_TRUE(for_j_opt);
+    EXPECT_EQ(for_j_opt, &for_j);
+    EXPECT_EQ(for_j_opt->root().size(), 2);
+    auto* block1_opt =
+        dynamic_cast<structured_control_flow::Block*>(&for_j_opt->root().at(0).first);
+    EXPECT_TRUE(block1_opt);
+    EXPECT_EQ(block1_opt, &block1);
+    auto* block_einsum =
+        dynamic_cast<structured_control_flow::Block*>(&for_j_opt->root().at(1).first);
+    EXPECT_TRUE(block_einsum);
+    EXPECT_EQ(block_einsum->dataflow().nodes().size(), 6);
+    data_flow::LibraryNode* libnode;
+    for (auto& node : block_einsum->dataflow().nodes()) {
+        if ((libnode = dynamic_cast<data_flow::LibraryNode*>(&node))) break;
+    }
+    EXPECT_TRUE(libnode);
+    auto* einsum_node = dynamic_cast<einsum::EinsumNode*>(libnode);
+    EXPECT_TRUE(einsum_node);
+    EXPECT_EQ(einsum_node->outputs(), std::vector<std::string>({"_out"}));
+    EXPECT_EQ(einsum_node->inputs(), std::vector<std::string>({"_in0", "_in1", "_in2", "_out"}));
+    EXPECT_EQ(einsum_node->maps().size(), 0);
+    EXPECT_TRUE(subsets_eq(einsum_node->out_indices(), subsets.at("D")));
+    auto conn2cont = get_conn2cont(*block_einsum, *libnode);
+    EXPECT_EQ(einsum_node->in_indices().size(), 4);
+    EXPECT_TRUE(subsets_eq(einsum_node->in_indices(0), subsets.at(conn2cont.at("_in0"))));
+    EXPECT_TRUE(subsets_eq(einsum_node->in_indices(1), subsets.at(conn2cont.at("_in1"))));
+    EXPECT_TRUE(subsets_eq(einsum_node->in_indices(2), subsets.at(conn2cont.at("_in2"))));
+    EXPECT_TRUE(subsets_eq(einsum_node->in_indices(3), subsets.at(conn2cont.at("_out"))));
 }
 
 TEST(EinsumLift, MatrixElementwiseMultiplication_4) {
@@ -1160,6 +2140,12 @@ TEST(EinsumLift, MatrixElementwiseMultiplication_4) {
 
     gen_for(j, J, body_i);
 
+    const std::unordered_map<std::string, data_flow::Subset> subsets = {
+        {"A", {indvar_i, indvar_j}},
+        {"B", {indvar_i, indvar_j}},
+        {"C", {indvar_i, indvar_j}},
+        {"D", {indvar_i, indvar_j}}};
+
     auto& block1 = builder.add_block(body_j);
     auto& A = builder.add_access(block1, "A");
     auto& B = builder.add_access(block1, "B");
@@ -1169,28 +2155,147 @@ TEST(EinsumLift, MatrixElementwiseMultiplication_4) {
     auto& tmp = builder.add_access(block1, "tmp");
     auto& tasklet1 = builder.add_tasklet(block1, data_flow::TaskletCode::assign,
                                          {"_out", base_desc}, {{"0.0", base_desc}});
-    builder.add_memlet(block1, tasklet1, "_out", D1, "void", {indvar_i, indvar_j});
+    builder.add_memlet(block1, tasklet1, "_out", D1, "void", subsets.at("D"));
     auto& tasklet2 = builder.add_tasklet(block1, data_flow::TaskletCode::mul, {"_out", base_desc},
                                          {{"_in1", base_desc}, {"_in2", base_desc}});
-    builder.add_memlet(block1, A, "void", tasklet2, "_in1", {indvar_i, indvar_j});
-    builder.add_memlet(block1, B, "void", tasklet2, "_in2", {indvar_i, indvar_j});
+    builder.add_memlet(block1, A, "void", tasklet2, "_in1", subsets.at("A"));
+    builder.add_memlet(block1, B, "void", tasklet2, "_in2", subsets.at("B"));
     builder.add_memlet(block1, tasklet2, "_out", tmp, "void", {});
     auto& tasklet3 =
         builder.add_tasklet(block1, data_flow::TaskletCode::fma, {"_out", base_desc},
                             {{"_in1", base_desc}, {"_in2", base_desc}, {"_in3", base_desc}});
     builder.add_memlet(block1, tmp, "void", tasklet3, "_in1", {});
-    builder.add_memlet(block1, C, "void", tasklet3, "_in2", {indvar_i, indvar_j});
-    builder.add_memlet(block1, D1, "void", tasklet3, "_in3", {indvar_i, indvar_j});
-    builder.add_memlet(block1, tasklet3, "_out", D2, "void", {indvar_i, indvar_j});
+    builder.add_memlet(block1, C, "void", tasklet3, "_in2", subsets.at("C"));
+    builder.add_memlet(block1, D1, "void", tasklet3, "_in3", subsets.at("D"));
+    builder.add_memlet(block1, tasklet3, "_out", D2, "void", subsets.at("D"));
 
     auto sdfg = builder.move();
 
     builder::StructuredSDFGBuilder builder_opt(sdfg);
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
 
-    transformations::EinsumLift transformation(tasklet1, {}, block1);
+    transformations::EinsumLift transformation({}, block1);
     EXPECT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
     transformation.apply(builder_opt, analysis_manager);
+
+    auto& root_opt = builder_opt.subject().root();
+    EXPECT_EQ(root_opt.size(), 1);
+    auto* for_i_opt = dynamic_cast<structured_control_flow::For*>(&root_opt.at(0).first);
+    EXPECT_TRUE(for_i_opt);
+    EXPECT_EQ(for_i_opt, &for_i);
+    EXPECT_EQ(for_i_opt->root().size(), 1);
+    auto* for_j_opt = dynamic_cast<structured_control_flow::For*>(&for_i_opt->root().at(0).first);
+    EXPECT_TRUE(for_j_opt);
+    EXPECT_EQ(for_j_opt, &for_j);
+    EXPECT_EQ(for_j_opt->root().size(), 1);
+    auto* block_einsum =
+        dynamic_cast<structured_control_flow::Block*>(&for_j_opt->root().at(0).first);
+    EXPECT_TRUE(block_einsum);
+    EXPECT_EQ(block_einsum->dataflow().nodes().size(), 5);
+    data_flow::LibraryNode* libnode;
+    for (auto& node : block_einsum->dataflow().nodes()) {
+        if ((libnode = dynamic_cast<data_flow::LibraryNode*>(&node))) break;
+    }
+    EXPECT_TRUE(libnode);
+    auto* einsum_node = dynamic_cast<einsum::EinsumNode*>(libnode);
+    EXPECT_TRUE(einsum_node);
+    EXPECT_EQ(einsum_node->outputs(), std::vector<std::string>({"_out"}));
+    EXPECT_EQ(einsum_node->inputs(), std::vector<std::string>({"_in0", "_in1", "_in2"}));
+    EXPECT_EQ(einsum_node->maps().size(), 0);
+    EXPECT_TRUE(subsets_eq(einsum_node->out_indices(), subsets.at("B")));
+    auto conn2cont = get_conn2cont(*block_einsum, *libnode);
+    EXPECT_EQ(einsum_node->in_indices().size(), 3);
+    EXPECT_TRUE(subsets_eq(einsum_node->in_indices(0), subsets.at(conn2cont.at("_in0"))));
+    EXPECT_TRUE(subsets_eq(einsum_node->in_indices(1), subsets.at(conn2cont.at("_in1"))));
+    EXPECT_TRUE(subsets_eq(einsum_node->in_indices(2), subsets.at(conn2cont.at("_in2"))));
+}
+
+TEST(EinsumLift, MatrixElementwiseMultiplication_5) {
+    builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
+
+    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    builder.add_container("i", sym_desc);
+    builder.add_container("I", sym_desc, true);
+    builder.add_container("j", sym_desc);
+    builder.add_container("J", sym_desc, true);
+
+    types::Scalar base_desc(types::PrimitiveType::Float);
+    types::Pointer desc(base_desc);
+    types::Pointer desc2(*desc.clone());
+    builder.add_container("A", desc2, true);
+    builder.add_container("B", desc2, true);
+    builder.add_container("C", desc2, true);
+    builder.add_container("D", desc2, true);
+    builder.add_container("tmp", base_desc);
+
+    auto& root = builder.subject().root();
+
+    gen_for(i, I, root);
+
+    gen_for(j, J, body_i);
+
+    const std::unordered_map<std::string, data_flow::Subset> subsets = {
+        {"A", {indvar_i, indvar_j}},
+        {"B", {indvar_i, indvar_j}},
+        {"C", {indvar_i, indvar_j}},
+        {"D", {indvar_i, indvar_j}}};
+
+    auto& block1 = builder.add_block(body_j);
+    auto& A = builder.add_access(block1, "A");
+    auto& B = builder.add_access(block1, "B");
+    auto& C = builder.add_access(block1, "C");
+    auto& D = builder.add_access(block1, "D");
+    auto& tmp = builder.add_access(block1, "tmp");
+    auto& tasklet1 = builder.add_tasklet(block1, data_flow::TaskletCode::mul, {"_out", base_desc},
+                                         {{"_in1", base_desc}, {"_in2", base_desc}});
+    builder.add_memlet(block1, A, "void", tasklet1, "_in1", subsets.at("A"));
+    builder.add_memlet(block1, B, "void", tasklet1, "_in2", subsets.at("B"));
+    builder.add_memlet(block1, tasklet1, "_out", tmp, "void", {});
+    auto& tasklet2 = builder.add_tasklet(block1, data_flow::TaskletCode::mul, {"_out", base_desc},
+                                         {{"_in1", base_desc}, {"_in2", base_desc}});
+    builder.add_memlet(block1, tmp, "void", tasklet2, "_in1", {});
+    builder.add_memlet(block1, C, "void", tasklet2, "_in2", subsets.at("C"));
+    builder.add_memlet(block1, tasklet2, "_out", D, "void", subsets.at("D"));
+
+    auto sdfg = builder.move();
+
+    builder::StructuredSDFGBuilder builder_opt(sdfg);
+    analysis::AnalysisManager analysis_manager(builder_opt.subject());
+
+    transformations::EinsumLift transformation({}, block1);
+    EXPECT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
+    transformation.apply(builder_opt, analysis_manager);
+
+    auto& root_opt = builder_opt.subject().root();
+    EXPECT_EQ(root_opt.size(), 1);
+    auto* for_i_opt = dynamic_cast<structured_control_flow::For*>(&root_opt.at(0).first);
+    EXPECT_TRUE(for_i_opt);
+    EXPECT_EQ(for_i_opt, &for_i);
+    EXPECT_EQ(for_i_opt->root().size(), 1);
+    auto* for_j_opt = dynamic_cast<structured_control_flow::For*>(&for_i_opt->root().at(0).first);
+    EXPECT_TRUE(for_j_opt);
+    EXPECT_EQ(for_j_opt, &for_j);
+    EXPECT_EQ(for_j_opt->root().size(), 1);
+    auto* block_einsum =
+        dynamic_cast<structured_control_flow::Block*>(&for_j_opt->root().at(0).first);
+    EXPECT_TRUE(block_einsum);
+    EXPECT_EQ(block_einsum->dataflow().nodes().size(), 5);
+    data_flow::LibraryNode* libnode;
+    for (auto& node : block_einsum->dataflow().nodes()) {
+        if ((libnode = dynamic_cast<data_flow::LibraryNode*>(&node))) break;
+    }
+    EXPECT_TRUE(libnode);
+    auto* einsum_node = dynamic_cast<einsum::EinsumNode*>(libnode);
+    EXPECT_TRUE(einsum_node);
+    EXPECT_EQ(einsum_node->outputs(), std::vector<std::string>({"_out"}));
+    EXPECT_EQ(einsum_node->inputs(), std::vector<std::string>({"_in0", "_in1", "_in2"}));
+    EXPECT_EQ(einsum_node->maps().size(), 0);
+    EXPECT_TRUE(subsets_eq(einsum_node->out_indices(), subsets.at("B")));
+    auto conn2cont = get_conn2cont(*block_einsum, *libnode);
+    EXPECT_EQ(einsum_node->in_indices().size(), 3);
+    EXPECT_TRUE(subsets_eq(einsum_node->in_indices(0), subsets.at(conn2cont.at("_in0"))));
+    EXPECT_TRUE(subsets_eq(einsum_node->in_indices(1), subsets.at(conn2cont.at("_in1"))));
+    EXPECT_TRUE(subsets_eq(einsum_node->in_indices(2), subsets.at(conn2cont.at("_in2"))));
 }
 
 TEST(EinsumLift, VectorScaling_1) {
@@ -1221,6 +2326,9 @@ TEST(EinsumLift, VectorScaling_1) {
                                          {"_out", base_desc}, {{"0.0", base_desc}});
     builder.add_memlet(block1, tasklet1, "_out", e1, "void", {indvar_i});
 
+    const std::unordered_map<std::string, data_flow::Subset> subsets = {
+        {"a", {indvar_i}}, {"b", {}}, {"c", {}}, {"d", {}}, {"e", {indvar_i}}};
+
     auto& block2 = builder.add_block(body_i);
     auto& a = builder.add_access(block2, "a");
     auto& b = builder.add_access(block2, "b");
@@ -1233,33 +2341,67 @@ TEST(EinsumLift, VectorScaling_1) {
     auto& tmp3 = builder.add_access(block2, "tmp3");
     auto& tasklet2 = builder.add_tasklet(block2, data_flow::TaskletCode::mul, {"_out", base_desc},
                                          {{"_in1", base_desc}, {"_in2", base_desc}});
-    builder.add_memlet(block2, a, "void", tasklet2, "_in1", {indvar_i});
-    builder.add_memlet(block2, b, "void", tasklet2, "_in2", {});
+    builder.add_memlet(block2, a, "void", tasklet2, "_in1", subsets.at("a"));
+    builder.add_memlet(block2, b, "void", tasklet2, "_in2", subsets.at("b"));
     builder.add_memlet(block2, tasklet2, "_out", tmp1, "void", {});
     auto& tasklet3 = builder.add_tasklet(block2, data_flow::TaskletCode::mul, {"_out", base_desc},
                                          {{"_in1", base_desc}, {"_in2", base_desc}});
     builder.add_memlet(block2, tmp1, "void", tasklet3, "_in1", {});
-    builder.add_memlet(block2, c, "void", tasklet3, "_in2", {});
+    builder.add_memlet(block2, c, "void", tasklet3, "_in2", subsets.at("c"));
     builder.add_memlet(block2, tasklet3, "_out", tmp2, "void", {});
     auto& tasklet4 = builder.add_tasklet(block2, data_flow::TaskletCode::mul, {"_out", base_desc},
                                          {{"_in1", base_desc}, {"_in2", base_desc}});
     builder.add_memlet(block2, tmp2, "void", tasklet4, "_in1", {});
-    builder.add_memlet(block2, d, "void", tasklet4, "_in2", {});
+    builder.add_memlet(block2, d, "void", tasklet4, "_in2", subsets.at("d"));
     builder.add_memlet(block2, tasklet4, "_out", tmp3, "void", {});
     auto& tasklet5 = builder.add_tasklet(block2, data_flow::TaskletCode::add, {"_out", base_desc},
                                          {{"_in1", base_desc}, {"_in2", base_desc}});
-    builder.add_memlet(block2, e2, "void", tasklet5, "_in1", {indvar_i});
+    builder.add_memlet(block2, e2, "void", tasklet5, "_in1", subsets.at("e"));
     builder.add_memlet(block2, tmp3, "void", tasklet5, "_in2", {});
-    builder.add_memlet(block2, tasklet5, "_out", e3, "void", {indvar_i});
+    builder.add_memlet(block2, tasklet5, "_out", e3, "void", subsets.at("e"));
 
     auto sdfg = builder.move();
 
     builder::StructuredSDFGBuilder builder_opt(sdfg);
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
 
-    transformations::EinsumLift transformation(tasklet1, {}, block2);
+    transformations::EinsumLift transformation({}, block2);
     EXPECT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
     transformation.apply(builder_opt, analysis_manager);
+
+    auto& root_opt = builder_opt.subject().root();
+    EXPECT_EQ(root_opt.size(), 1);
+    auto* for_i_opt = dynamic_cast<structured_control_flow::For*>(&root_opt.at(0).first);
+    EXPECT_TRUE(for_i_opt);
+    EXPECT_EQ(for_i_opt, &for_i);
+    EXPECT_EQ(for_i_opt->root().size(), 2);
+    auto* block1_opt =
+        dynamic_cast<structured_control_flow::Block*>(&for_i_opt->root().at(0).first);
+    EXPECT_TRUE(block1_opt);
+    EXPECT_EQ(block1_opt, &block1);
+    auto* block_einsum =
+        dynamic_cast<structured_control_flow::Block*>(&for_i_opt->root().at(1).first);
+    EXPECT_TRUE(block_einsum);
+    EXPECT_EQ(block_einsum->dataflow().nodes().size(), 7);
+    data_flow::LibraryNode* libnode;
+    for (auto& node : block_einsum->dataflow().nodes()) {
+        if ((libnode = dynamic_cast<data_flow::LibraryNode*>(&node))) break;
+    }
+    EXPECT_TRUE(libnode);
+    auto* einsum_node = dynamic_cast<einsum::EinsumNode*>(libnode);
+    EXPECT_TRUE(einsum_node);
+    EXPECT_EQ(einsum_node->outputs(), std::vector<std::string>({"_out"}));
+    EXPECT_EQ(einsum_node->inputs(),
+              std::vector<std::string>({"_in0", "_in1", "_in2", "_in3", "_out"}));
+    EXPECT_EQ(einsum_node->maps().size(), 0);
+    EXPECT_TRUE(subsets_eq(einsum_node->out_indices(), subsets.at("e")));
+    auto conn2cont = get_conn2cont(*block_einsum, *libnode);
+    EXPECT_EQ(einsum_node->in_indices().size(), 5);
+    EXPECT_TRUE(subsets_eq(einsum_node->in_indices(0), subsets.at(conn2cont.at("_in0"))));
+    EXPECT_TRUE(subsets_eq(einsum_node->in_indices(1), subsets.at(conn2cont.at("_in1"))));
+    EXPECT_TRUE(subsets_eq(einsum_node->in_indices(2), subsets.at(conn2cont.at("_in2"))));
+    EXPECT_TRUE(subsets_eq(einsum_node->in_indices(3), subsets.at(conn2cont.at("_in3"))));
+    EXPECT_TRUE(subsets_eq(einsum_node->in_indices(4), subsets.at(conn2cont.at("_out"))));
 }
 
 TEST(EinsumLift, VectorScaling_2) {
@@ -1284,6 +2426,9 @@ TEST(EinsumLift, VectorScaling_2) {
 
     gen_for(i, I, root);
 
+    const std::unordered_map<std::string, data_flow::Subset> subsets = {
+        {"a", {indvar_i}}, {"b", {}}, {"c", {}}, {"d", {}}, {"e", {indvar_i}}};
+
     auto& block1 = builder.add_block(body_i);
     auto& a = builder.add_access(block1, "a");
     auto& b = builder.add_access(block1, "b");
@@ -1296,36 +2441,63 @@ TEST(EinsumLift, VectorScaling_2) {
     auto& tmp3 = builder.add_access(block1, "tmp3");
     auto& tasklet1 = builder.add_tasklet(block1, data_flow::TaskletCode::assign,
                                          {"_out", base_desc}, {{"0.0", base_desc}});
-    builder.add_memlet(block1, tasklet1, "_out", e1, "void", {indvar_i});
+    builder.add_memlet(block1, tasklet1, "_out", e1, "void", subsets.at("e"));
     auto& tasklet2 = builder.add_tasklet(block1, data_flow::TaskletCode::mul, {"_out", base_desc},
                                          {{"_in1", base_desc}, {"_in2", base_desc}});
-    builder.add_memlet(block1, a, "void", tasklet2, "_in1", {indvar_i});
-    builder.add_memlet(block1, b, "void", tasklet2, "_in2", {});
+    builder.add_memlet(block1, a, "void", tasklet2, "_in1", subsets.at("a"));
+    builder.add_memlet(block1, b, "void", tasklet2, "_in2", subsets.at("b"));
     builder.add_memlet(block1, tasklet2, "_out", tmp1, "void", {});
     auto& tasklet3 = builder.add_tasklet(block1, data_flow::TaskletCode::mul, {"_out", base_desc},
                                          {{"_in1", base_desc}, {"_in2", base_desc}});
     builder.add_memlet(block1, tmp1, "void", tasklet3, "_in1", {});
-    builder.add_memlet(block1, c, "void", tasklet3, "_in2", {});
+    builder.add_memlet(block1, c, "void", tasklet3, "_in2", subsets.at("c"));
     builder.add_memlet(block1, tasklet3, "_out", tmp2, "void", {});
     auto& tasklet4 = builder.add_tasklet(block1, data_flow::TaskletCode::mul, {"_out", base_desc},
                                          {{"_in1", base_desc}, {"_in2", base_desc}});
     builder.add_memlet(block1, tmp2, "void", tasklet4, "_in1", {});
-    builder.add_memlet(block1, d, "void", tasklet4, "_in2", {});
+    builder.add_memlet(block1, d, "void", tasklet4, "_in2", subsets.at("d"));
     builder.add_memlet(block1, tasklet4, "_out", tmp3, "void", {});
     auto& tasklet5 = builder.add_tasklet(block1, data_flow::TaskletCode::add, {"_out", base_desc},
                                          {{"_in1", base_desc}, {"_in2", base_desc}});
-    builder.add_memlet(block1, e1, "void", tasklet5, "_in1", {indvar_i});
+    builder.add_memlet(block1, e1, "void", tasklet5, "_in1", subsets.at("e"));
     builder.add_memlet(block1, tmp3, "void", tasklet5, "_in2", {});
-    builder.add_memlet(block1, tasklet5, "_out", e2, "void", {indvar_i});
+    builder.add_memlet(block1, tasklet5, "_out", e2, "void", subsets.at("e"));
 
     auto sdfg = builder.move();
 
     builder::StructuredSDFGBuilder builder_opt(sdfg);
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
 
-    transformations::EinsumLift transformation(tasklet1, {}, block1);
+    transformations::EinsumLift transformation({}, block1);
     EXPECT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
     transformation.apply(builder_opt, analysis_manager);
+
+    auto& root_opt = builder_opt.subject().root();
+    EXPECT_EQ(root_opt.size(), 1);
+    auto* for_i_opt = dynamic_cast<structured_control_flow::For*>(&root_opt.at(0).first);
+    EXPECT_TRUE(for_i_opt);
+    EXPECT_EQ(for_i_opt, &for_i);
+    EXPECT_EQ(for_i_opt->root().size(), 1);
+    auto* block_einsum = dynamic_cast<structured_control_flow::Block*>(&for_i_opt->root().at(0).first);
+    EXPECT_TRUE(block_einsum);
+    EXPECT_EQ(block_einsum->dataflow().nodes().size(), 6);
+    data_flow::LibraryNode* libnode;
+    for (auto& node : block_einsum->dataflow().nodes()) {
+        if ((libnode = dynamic_cast<data_flow::LibraryNode*>(&node))) break;
+    }
+    EXPECT_TRUE(libnode);
+    auto* einsum_node = dynamic_cast<einsum::EinsumNode*>(libnode);
+    EXPECT_TRUE(einsum_node);
+    EXPECT_EQ(einsum_node->outputs(), std::vector<std::string>({"_out"}));
+    EXPECT_EQ(einsum_node->inputs(), std::vector<std::string>({"_in0", "_in1", "_in2", "_in3"}));
+    EXPECT_EQ(einsum_node->maps().size(), 0);
+    EXPECT_TRUE(subsets_eq(einsum_node->out_indices(), subsets.at("e")));
+    auto conn2cont = get_conn2cont(*block_einsum, *libnode);
+    EXPECT_EQ(einsum_node->in_indices().size(), 4);
+    EXPECT_TRUE(subsets_eq(einsum_node->in_indices(0), subsets.at(conn2cont.at("_in0"))));
+    EXPECT_TRUE(subsets_eq(einsum_node->in_indices(1), subsets.at(conn2cont.at("_in1"))));
+    EXPECT_TRUE(subsets_eq(einsum_node->in_indices(2), subsets.at(conn2cont.at("_in2"))));
+    EXPECT_TRUE(subsets_eq(einsum_node->in_indices(3), subsets.at(conn2cont.at("_in3"))));
 }
 
 TEST(EinsumLift, VectorScaling_3) {
@@ -1355,6 +2527,9 @@ TEST(EinsumLift, VectorScaling_3) {
                                          {"_out", base_desc}, {{"0.0", base_desc}});
     builder.add_memlet(block1, tasklet1, "_out", e1, "void", {indvar_i});
 
+    const std::unordered_map<std::string, data_flow::Subset> subsets = {
+        {"a", {indvar_i}}, {"b", {}}, {"c", {}}, {"d", {}}, {"e", {indvar_i}}};
+
     auto& block2 = builder.add_block(body_i);
     auto& a = builder.add_access(block2, "a");
     auto& b = builder.add_access(block2, "b");
@@ -1366,30 +2541,64 @@ TEST(EinsumLift, VectorScaling_3) {
     auto& tmp2 = builder.add_access(block2, "tmp2");
     auto& tasklet2 = builder.add_tasklet(block2, data_flow::TaskletCode::mul, {"_out", base_desc},
                                          {{"_in1", base_desc}, {"_in2", base_desc}});
-    builder.add_memlet(block2, a, "void", tasklet2, "_in1", {indvar_i});
-    builder.add_memlet(block2, b, "void", tasklet2, "_in2", {});
+    builder.add_memlet(block2, a, "void", tasklet2, "_in1", subsets.at("a"));
+    builder.add_memlet(block2, b, "void", tasklet2, "_in2", subsets.at("b"));
     builder.add_memlet(block2, tasklet2, "_out", tmp1, "void", {});
     auto& tasklet3 = builder.add_tasklet(block2, data_flow::TaskletCode::mul, {"_out", base_desc},
                                          {{"_in1", base_desc}, {"_in2", base_desc}});
     builder.add_memlet(block2, tmp1, "void", tasklet3, "_in1", {});
-    builder.add_memlet(block2, c, "void", tasklet3, "_in2", {});
+    builder.add_memlet(block2, c, "void", tasklet3, "_in2", subsets.at("c"));
     builder.add_memlet(block2, tasklet3, "_out", tmp2, "void", {});
     auto& tasklet4 =
         builder.add_tasklet(block2, data_flow::TaskletCode::fma, {"_out", base_desc},
                             {{"_in1", base_desc}, {"_in2", base_desc}, {"_in3", base_desc}});
     builder.add_memlet(block2, tmp2, "void", tasklet4, "_in1", {});
-    builder.add_memlet(block2, d, "void", tasklet4, "_in2", {});
-    builder.add_memlet(block2, e2, "void", tasklet4, "_in3", {indvar_i});
-    builder.add_memlet(block2, tasklet4, "_out", e3, "void", {indvar_i});
+    builder.add_memlet(block2, d, "void", tasklet4, "_in2", subsets.at("d"));
+    builder.add_memlet(block2, e2, "void", tasklet4, "_in3", subsets.at("e"));
+    builder.add_memlet(block2, tasklet4, "_out", e3, "void", subsets.at("e"));
 
     auto sdfg = builder.move();
 
     builder::StructuredSDFGBuilder builder_opt(sdfg);
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
 
-    transformations::EinsumLift transformation(tasklet1, {}, block2);
+    transformations::EinsumLift transformation({}, block2);
     EXPECT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
     transformation.apply(builder_opt, analysis_manager);
+
+    auto& root_opt = builder_opt.subject().root();
+    EXPECT_EQ(root_opt.size(), 1);
+    auto* for_i_opt = dynamic_cast<structured_control_flow::For*>(&root_opt.at(0).first);
+    EXPECT_TRUE(for_i_opt);
+    EXPECT_EQ(for_i_opt, &for_i);
+    EXPECT_EQ(for_i_opt->root().size(), 2);
+    auto* block1_opt =
+        dynamic_cast<structured_control_flow::Block*>(&for_i_opt->root().at(0).first);
+    EXPECT_TRUE(block1_opt);
+    EXPECT_EQ(block1_opt, &block1);
+    auto* block_einsum =
+        dynamic_cast<structured_control_flow::Block*>(&for_i_opt->root().at(1).first);
+    EXPECT_TRUE(block_einsum);
+    EXPECT_EQ(block_einsum->dataflow().nodes().size(), 7);
+    data_flow::LibraryNode* libnode;
+    for (auto& node : block_einsum->dataflow().nodes()) {
+        if ((libnode = dynamic_cast<data_flow::LibraryNode*>(&node))) break;
+    }
+    EXPECT_TRUE(libnode);
+    auto* einsum_node = dynamic_cast<einsum::EinsumNode*>(libnode);
+    EXPECT_TRUE(einsum_node);
+    EXPECT_EQ(einsum_node->outputs(), std::vector<std::string>({"_out"}));
+    EXPECT_EQ(einsum_node->inputs(),
+              std::vector<std::string>({"_in0", "_in1", "_in2", "_in3", "_out"}));
+    EXPECT_EQ(einsum_node->maps().size(), 0);
+    EXPECT_TRUE(subsets_eq(einsum_node->out_indices(), subsets.at("e")));
+    auto conn2cont = get_conn2cont(*block_einsum, *libnode);
+    EXPECT_EQ(einsum_node->in_indices().size(), 5);
+    EXPECT_TRUE(subsets_eq(einsum_node->in_indices(0), subsets.at(conn2cont.at("_in0"))));
+    EXPECT_TRUE(subsets_eq(einsum_node->in_indices(1), subsets.at(conn2cont.at("_in1"))));
+    EXPECT_TRUE(subsets_eq(einsum_node->in_indices(2), subsets.at(conn2cont.at("_in2"))));
+    EXPECT_TRUE(subsets_eq(einsum_node->in_indices(3), subsets.at(conn2cont.at("_in3"))));
+    EXPECT_TRUE(subsets_eq(einsum_node->in_indices(4), subsets.at(conn2cont.at("_out"))));
 }
 
 TEST(EinsumLift, VectorScaling_4) {
@@ -1413,6 +2622,9 @@ TEST(EinsumLift, VectorScaling_4) {
 
     gen_for(i, I, root);
 
+    const std::unordered_map<std::string, data_flow::Subset> subsets = {
+        {"a", {indvar_i}}, {"b", {}}, {"c", {}}, {"d", {}}, {"e", {indvar_i}}};
+
     auto& block1 = builder.add_block(body_i);
     auto& a = builder.add_access(block1, "a");
     auto& b = builder.add_access(block1, "b");
@@ -1424,31 +2636,143 @@ TEST(EinsumLift, VectorScaling_4) {
     auto& tmp2 = builder.add_access(block1, "tmp2");
     auto& tasklet1 = builder.add_tasklet(block1, data_flow::TaskletCode::assign,
                                          {"_out", base_desc}, {{"0.0", base_desc}});
-    builder.add_memlet(block1, tasklet1, "_out", e1, "void", {indvar_i});
+    builder.add_memlet(block1, tasklet1, "_out", e1, "void", subsets.at("e"));
     auto& tasklet2 = builder.add_tasklet(block1, data_flow::TaskletCode::mul, {"_out", base_desc},
                                          {{"_in1", base_desc}, {"_in2", base_desc}});
-    builder.add_memlet(block1, a, "void", tasklet2, "_in1", {indvar_i});
-    builder.add_memlet(block1, b, "void", tasklet2, "_in2", {});
+    builder.add_memlet(block1, a, "void", tasklet2, "_in1", subsets.at("a"));
+    builder.add_memlet(block1, b, "void", tasklet2, "_in2", subsets.at("b"));
     builder.add_memlet(block1, tasklet2, "_out", tmp1, "void", {});
     auto& tasklet3 = builder.add_tasklet(block1, data_flow::TaskletCode::mul, {"_out", base_desc},
                                          {{"_in1", base_desc}, {"_in2", base_desc}});
     builder.add_memlet(block1, tmp1, "void", tasklet3, "_in1", {});
-    builder.add_memlet(block1, c, "void", tasklet3, "_in2", {});
+    builder.add_memlet(block1, c, "void", tasklet3, "_in2", subsets.at("c"));
     builder.add_memlet(block1, tasklet3, "_out", tmp2, "void", {});
     auto& tasklet4 =
         builder.add_tasklet(block1, data_flow::TaskletCode::fma, {"_out", base_desc},
                             {{"_in1", base_desc}, {"_in2", base_desc}, {"_in3", base_desc}});
     builder.add_memlet(block1, tmp2, "void", tasklet4, "_in1", {});
-    builder.add_memlet(block1, d, "void", tasklet4, "_in2", {});
-    builder.add_memlet(block1, e1, "void", tasklet4, "_in3", {indvar_i});
-    builder.add_memlet(block1, tasklet4, "_out", e2, "void", {indvar_i});
+    builder.add_memlet(block1, d, "void", tasklet4, "_in2", subsets.at("d"));
+    builder.add_memlet(block1, e1, "void", tasklet4, "_in3", subsets.at("e"));
+    builder.add_memlet(block1, tasklet4, "_out", e2, "void", subsets.at("e"));
 
     auto sdfg = builder.move();
 
     builder::StructuredSDFGBuilder builder_opt(sdfg);
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
 
-    transformations::EinsumLift transformation(tasklet1, {}, block1);
+    transformations::EinsumLift transformation({}, block1);
     EXPECT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
     transformation.apply(builder_opt, analysis_manager);
+
+    auto& root_opt = builder_opt.subject().root();
+    EXPECT_EQ(root_opt.size(), 1);
+    auto* for_i_opt = dynamic_cast<structured_control_flow::For*>(&root_opt.at(0).first);
+    EXPECT_TRUE(for_i_opt);
+    EXPECT_EQ(for_i_opt, &for_i);
+    EXPECT_EQ(for_i_opt->root().size(), 1);
+    auto* block_einsum = dynamic_cast<structured_control_flow::Block*>(&for_i_opt->root().at(0).first);
+    EXPECT_TRUE(block_einsum);
+    EXPECT_EQ(block_einsum->dataflow().nodes().size(), 6);
+    data_flow::LibraryNode* libnode;
+    for (auto& node : block_einsum->dataflow().nodes()) {
+        if ((libnode = dynamic_cast<data_flow::LibraryNode*>(&node))) break;
+    }
+    EXPECT_TRUE(libnode);
+    auto* einsum_node = dynamic_cast<einsum::EinsumNode*>(libnode);
+    EXPECT_TRUE(einsum_node);
+    EXPECT_EQ(einsum_node->outputs(), std::vector<std::string>({"_out"}));
+    EXPECT_EQ(einsum_node->inputs(), std::vector<std::string>({"_in0", "_in1", "_in2", "_in3"}));
+    EXPECT_EQ(einsum_node->maps().size(), 0);
+    EXPECT_TRUE(subsets_eq(einsum_node->out_indices(), subsets.at("e")));
+    auto conn2cont = get_conn2cont(*block_einsum, *libnode);
+    EXPECT_EQ(einsum_node->in_indices().size(), 4);
+    EXPECT_TRUE(subsets_eq(einsum_node->in_indices(0), subsets.at(conn2cont.at("_in0"))));
+    EXPECT_TRUE(subsets_eq(einsum_node->in_indices(1), subsets.at(conn2cont.at("_in1"))));
+    EXPECT_TRUE(subsets_eq(einsum_node->in_indices(2), subsets.at(conn2cont.at("_in2"))));
+    EXPECT_TRUE(subsets_eq(einsum_node->in_indices(3), subsets.at(conn2cont.at("_in3"))));
+}
+
+TEST(EinsumLift, VectorScaling_5) {
+    builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
+
+    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    builder.add_container("i", sym_desc);
+    builder.add_container("I", sym_desc, true);
+
+    types::Scalar base_desc(types::PrimitiveType::Float);
+    types::Pointer desc(base_desc);
+    builder.add_container("a", desc, true);
+    builder.add_container("b", base_desc, true);
+    builder.add_container("c", base_desc, true);
+    builder.add_container("d", base_desc, true);
+    builder.add_container("e", desc, true);
+    builder.add_container("tmp1", base_desc);
+    builder.add_container("tmp2", base_desc);
+
+    auto& root = builder.subject().root();
+
+    gen_for(i, I, root);
+
+    const std::unordered_map<std::string, data_flow::Subset> subsets = {
+        {"a", {indvar_i}}, {"b", {}}, {"c", {}}, {"d", {}}, {"e", {indvar_i}}};
+
+    auto& block1 = builder.add_block(body_i);
+    auto& a = builder.add_access(block1, "a");
+    auto& b = builder.add_access(block1, "b");
+    auto& c = builder.add_access(block1, "c");
+    auto& d = builder.add_access(block1, "d");
+    auto& e = builder.add_access(block1, "e");
+    auto& tmp1 = builder.add_access(block1, "tmp1");
+    auto& tmp2 = builder.add_access(block1, "tmp2");
+    auto& tasklet1 = builder.add_tasklet(block1, data_flow::TaskletCode::mul, {"_out", base_desc},
+                                         {{"_in1", base_desc}, {"_in2", base_desc}});
+    builder.add_memlet(block1, a, "void", tasklet1, "_in1", subsets.at("a"));
+    builder.add_memlet(block1, b, "void", tasklet1, "_in2", subsets.at("b"));
+    builder.add_memlet(block1, tasklet1, "_out", tmp1, "void", {});
+    auto& tasklet2 = builder.add_tasklet(block1, data_flow::TaskletCode::mul, {"_out", base_desc},
+                                         {{"_in1", base_desc}, {"_in2", base_desc}});
+    builder.add_memlet(block1, tmp1, "void", tasklet2, "_in1", {});
+    builder.add_memlet(block1, c, "void", tasklet2, "_in2", subsets.at("c"));
+    builder.add_memlet(block1, tasklet2, "_out", tmp2, "void", {});
+    auto& tasklet3 = builder.add_tasklet(block1, data_flow::TaskletCode::mul, {"_out", base_desc},
+                                         {{"_in1", base_desc}, {"_in2", base_desc}});
+    builder.add_memlet(block1, tmp2, "void", tasklet3, "_in1", {});
+    builder.add_memlet(block1, d, "void", tasklet3, "_in2", subsets.at("d"));
+    builder.add_memlet(block1, tasklet3, "_out", e, "void", subsets.at("e"));
+
+    auto sdfg = builder.move();
+
+    builder::StructuredSDFGBuilder builder_opt(sdfg);
+    analysis::AnalysisManager analysis_manager(builder_opt.subject());
+
+    transformations::EinsumLift transformation({}, block1);
+    EXPECT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
+    transformation.apply(builder_opt, analysis_manager);
+
+    auto& root_opt = builder_opt.subject().root();
+    EXPECT_EQ(root_opt.size(), 1);
+    auto* for_i_opt = dynamic_cast<structured_control_flow::For*>(&root_opt.at(0).first);
+    EXPECT_TRUE(for_i_opt);
+    EXPECT_EQ(for_i_opt, &for_i);
+    EXPECT_EQ(for_i_opt->root().size(), 1);
+    auto* block_einsum = dynamic_cast<structured_control_flow::Block*>(&for_i_opt->root().at(0).first);
+    EXPECT_TRUE(block_einsum);
+    EXPECT_EQ(block_einsum->dataflow().nodes().size(), 6);
+    data_flow::LibraryNode* libnode;
+    for (auto& node : block_einsum->dataflow().nodes()) {
+        if ((libnode = dynamic_cast<data_flow::LibraryNode*>(&node))) break;
+    }
+    EXPECT_TRUE(libnode);
+    auto* einsum_node = dynamic_cast<einsum::EinsumNode*>(libnode);
+    EXPECT_TRUE(einsum_node);
+    EXPECT_EQ(einsum_node->outputs(), std::vector<std::string>({"_out"}));
+    EXPECT_EQ(einsum_node->inputs(), std::vector<std::string>({"_in0", "_in1", "_in2", "_in3"}));
+    EXPECT_EQ(einsum_node->maps().size(), 0);
+    EXPECT_TRUE(subsets_eq(einsum_node->out_indices(), subsets.at("e")));
+    auto conn2cont = get_conn2cont(*block_einsum, *libnode);
+    EXPECT_EQ(einsum_node->in_indices().size(), 4);
+    EXPECT_TRUE(subsets_eq(einsum_node->in_indices(0), subsets.at(conn2cont.at("_in0"))));
+    EXPECT_TRUE(subsets_eq(einsum_node->in_indices(1), subsets.at(conn2cont.at("_in1"))));
+    EXPECT_TRUE(subsets_eq(einsum_node->in_indices(2), subsets.at(conn2cont.at("_in2"))));
+    EXPECT_TRUE(subsets_eq(einsum_node->in_indices(3), subsets.at(conn2cont.at("_in3"))));
 }

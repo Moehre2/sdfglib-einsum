@@ -61,6 +61,21 @@ EinsumNode::EinsumNode(size_t element_id, const DebugInfo& debug_info, const gra
         }
     }
 
+    size_t i;
+    for (i = 0; i < inputs.size(); ++i) {
+        if (inputs[i] == outputs[0]) break;
+    }
+    if (i < inputs.size()) {
+        if (in_indices[i].size() != out_indices.size()) {
+            throw InvalidSDFGException("Out input and output do not have the same indices");
+        }
+        for (size_t j = 0; j < out_indices.size(); ++j) {
+            if (!symbolic::eq(in_indices[i][j], out_indices[j])) {
+                throw InvalidSDFGException("Out input and output do not have the same indices");
+            }
+        }
+    }
+
     // TODO: Check if container exist and types match einsum index access
     // The Problem: For a types::infer_type, I need a sdfg::Function which I am unable to get at
     //              this point
@@ -127,8 +142,24 @@ std::string EinsumNode::toStr() const {
         stream << "]";
     }
     stream << " = ";
+    long long oii = this->getOutInputIndex();
+    if (oii >= 0) {
+        stream << this->inputs_[oii];
+        if (this->in_indices_[oii].size() > 0) {
+            stream << "[";
+            for (size_t i = 0; i < this->in_indices_[oii].size(); ++i) {
+                if (i > 0) stream << ",";
+                stream << this->in_indices_[oii][i]->__str__();
+            }
+            stream << "]";
+        }
+        stream << " + ";
+    }
+    bool first_mul = false;
     for (size_t i = 0; i < this->inputs_.size(); ++i) {
-        if (i > 0) stream << " * ";
+        if (this->inputs_[i] == this->outputs_[0]) continue;
+        if (first_mul) stream << " * ";
+        first_mul = true;
         stream << this->inputs_[i];
         if (this->in_indices_[i].size() > 0) {
             stream << "[";
@@ -145,6 +176,13 @@ std::string EinsumNode::toStr() const {
     }
 
     return stream.str();
+}
+
+long long EinsumNode::getOutInputIndex() const {
+    for (size_t i = 0; i < this->inputs_.size(); ++i) {
+        if (this->inputs_[i] == this->outputs_[0]) return i;
+    }
+    return -1;
 }
 
 }  // namespace einsum

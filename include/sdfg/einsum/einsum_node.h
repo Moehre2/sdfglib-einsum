@@ -68,6 +68,8 @@ class EinsumNode : public data_flow::LibraryNode {
                          const symbolic::Expression& new_expression) override;
 
     virtual std::string toStr() const override;
+
+    long long getOutInputIndex() const;
 };
 
 }  // namespace einsum

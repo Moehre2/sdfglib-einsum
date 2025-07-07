@@ -27,7 +27,7 @@ unsigned long long i;
         {
             for (k = 0; k < K; k++)
             {
-                float _out = 0.0f;
+                float _out = C[i][k];
 
                 for (j = 0; j < J; j++)
                 {
@@ -72,16 +72,19 @@ TEST(EinsumDispatcher, MatrixMatrixMultiplication_partial1) {
     auto& block = builder.add_block(body_i);
     auto& A = builder.add_access(block, "A");
     auto& B = builder.add_access(block, "B");
-    auto& C = builder.add_access(block, "C");
+    auto& C1 = builder.add_access(block, "C");
+    auto& C2 = builder.add_access(block, "C");
     auto& libnode =
         builder.add_library_node<einsum::EinsumNode,
                                  std::vector<std::pair<symbolic::Symbol, symbolic::Expression>>,
                                  data_flow::Subset, std::vector<data_flow::Subset>>(
-            block, einsum::LibraryNodeType_Einsum, {"_out"}, {"_in1", "_in2"}, false, DebugInfo(),
-            {{j, symbolic::symbol("J")}, {k, symbolic::symbol("K")}}, {i, k}, {{i, j}, {j, k}});
+            block, einsum::LibraryNodeType_Einsum, {"_out"}, {"_out", "_in1", "_in2"}, false,
+            DebugInfo(), {{j, symbolic::symbol("J")}, {k, symbolic::symbol("K")}}, {i, k},
+            {{i, k}, {i, j}, {j, k}});
+    builder.add_memlet(block, C1, "void", libnode, "_out", {});
     builder.add_memlet(block, A, "void", libnode, "_in1", {});
     builder.add_memlet(block, B, "void", libnode, "_in2", {});
-    builder.add_memlet(block, libnode, "_out", C, "void", {});
+    builder.add_memlet(block, libnode, "_out", C2, "void", {});
 
     auto sdfg = builder.move();
 
@@ -102,7 +105,7 @@ unsigned long long i;
 
                 for (k = 0; k < K; k++)
                 {
-                    float _out = 0.0f;
+                    float _out = C[i][k];
 
                     for (j = 0; j < J; j++)
                     {
@@ -151,16 +154,18 @@ TEST(EinsumDispatcher, MatrixMatrixMultiplication_partial2) {
     auto& block = builder.add_block(body_k);
     auto& A = builder.add_access(block, "A");
     auto& B = builder.add_access(block, "B");
-    auto& C = builder.add_access(block, "C");
+    auto& C1 = builder.add_access(block, "C");
+    auto& C2 = builder.add_access(block, "C");
     auto& libnode =
         builder.add_library_node<einsum::EinsumNode,
                                  std::vector<std::pair<symbolic::Symbol, symbolic::Expression>>,
                                  data_flow::Subset, std::vector<data_flow::Subset>>(
-            block, einsum::LibraryNodeType_Einsum, {"_out"}, {"_in1", "_in2"}, false, DebugInfo(),
-            {{j, symbolic::symbol("J")}}, {i, k}, {{i, j}, {j, k}});
+            block, einsum::LibraryNodeType_Einsum, {"_out"}, {"_out", "_in1", "_in2"}, false,
+            DebugInfo(), {{j, symbolic::symbol("J")}}, {i, k}, {{i, k}, {i, j}, {j, k}});
+    builder.add_memlet(block, C1, "void", libnode, "_out", {});
     builder.add_memlet(block, A, "void", libnode, "_in1", {});
     builder.add_memlet(block, B, "void", libnode, "_in2", {});
-    builder.add_memlet(block, libnode, "_out", C, "void", {});
+    builder.add_memlet(block, libnode, "_out", C2, "void", {});
 
     auto sdfg = builder.move();
 
@@ -181,7 +186,7 @@ unsigned long long i;
                         float **_in1 = A;
                         float **_in2 = B;
 
-                        float _out = 0.0f;
+                        float _out = C[i][k];
 
                         for (j = 0; j < J; j++)
                         {
@@ -226,7 +231,7 @@ unsigned long long m;
             {
                 for (k = 0; k < K; k++)
                 {
-                    float _out = 0.0f;
+                    float _out = D[i][j][k];
 
                     for (l = 0; l < L; l++)
                     {
@@ -268,7 +273,7 @@ unsigned long long i;
 
         for (i = 0; i < I; i++)
         {
-            float _out = 0.0f;
+            float _out = c[i];
 
             for (j = 0; j < J; j++)
             {
@@ -299,9 +304,9 @@ TEST(EinsumDispatcher, DiagonalExtraction) {
 
         for (i = 0; i < I; i++)
         {
-            float _out = 0.0f;
+            float _out;
 
-            _out = _out + _in[i][i];
+            _out = _in[i][i];
 
             b[i] = _out;
         }
@@ -325,7 +330,7 @@ TEST(EinsumDispatcher, MatrixTrace) {
     {
         float **_in = A;
 
-        float _out = 0.0f;
+        float _out = *b;
 
         for (i = 0; i < I; i++)
         {
@@ -359,9 +364,9 @@ unsigned long long i;
         {
             for (j = 0; j < J; j++)
             {
-                float _out = 0.0f;
+                float _out;
 
-                _out = _out + _in[i][j];
+                _out = _in[i][j];
 
                 B[i][j] = _out;
             }
@@ -392,9 +397,9 @@ unsigned long long i;
         {
             for (i = 0; i < I; i++)
             {
-                float _out = 0.0f;
+                float _out;
 
-                _out = _out + _in[i][j];
+                _out = _in[i][j];
 
                 B[j][i] = _out;
             }
@@ -420,7 +425,7 @@ TEST(EinsumDispatcher, DotProduct) {
         float *_in1 = a;
         float *_in2 = b;
 
-        float _out = 0.0f;
+        float _out = *c;
 
         for (i = 0; i < I; i++)
         {
@@ -456,9 +461,9 @@ unsigned long long i;
         {
             for (j = 0; j < J; j++)
             {
-                float _out = 0.0f;
+                float _out;
 
-                _out = _out + _in1[i][j] * _in2[i][j] * _in3[i][j];
+                _out = _in1[i][j] * _in2[i][j] * _in3[i][j];
 
                 D[i][j] = _out;
             }
@@ -489,9 +494,9 @@ TEST(EinsumDispatcher, VectorScaling) {
 
         for (i = 0; i < I; i++)
         {
-            float _out = 0.0f;
+            float _out;
 
-            _out = _out + _in1[i] * _in2 * _in3 * _in4;
+            _out = _in1[i] * _in2 * _in3 * _in4;
 
             e[i] = _out;
         }
