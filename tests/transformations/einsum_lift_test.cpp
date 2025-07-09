@@ -130,7 +130,7 @@ TEST(EinsumLift, MatrixMatrixMultiplication_1) {
         dynamic_cast<structured_control_flow::Block*>(&for_k_opt->root().at(1).first);
     EXPECT_TRUE(block_einsum);
     EXPECT_EQ(block_einsum->dataflow().nodes().size(), 5);
-    data_flow::LibraryNode* libnode;
+    data_flow::LibraryNode* libnode = nullptr;
     for (auto& node : block_einsum->dataflow().nodes()) {
         if ((libnode = dynamic_cast<data_flow::LibraryNode*>(&node))) break;
     }
@@ -225,7 +225,7 @@ TEST(EinsumLift, MatrixMatrixMultiplication_2) {
         dynamic_cast<structured_control_flow::Block*>(&for_k_opt->root().at(1).first);
     EXPECT_TRUE(block_einsum);
     EXPECT_EQ(block_einsum->dataflow().nodes().size(), 5);
-    data_flow::LibraryNode* libnode;
+    data_flow::LibraryNode* libnode = nullptr;
     for (auto& node : block_einsum->dataflow().nodes()) {
         if ((libnode = dynamic_cast<data_flow::LibraryNode*>(&node))) break;
     }
@@ -354,7 +354,7 @@ TEST(EinsumLift, TensorContraction3D_1) {
         dynamic_cast<structured_control_flow::Block*>(&for_k_opt->root().at(1).first);
     EXPECT_TRUE(block_einsum);
     EXPECT_EQ(block_einsum->dataflow().nodes().size(), 6);
-    data_flow::LibraryNode* libnode;
+    data_flow::LibraryNode* libnode = nullptr;
     for (auto& node : block_einsum->dataflow().nodes()) {
         if ((libnode = dynamic_cast<data_flow::LibraryNode*>(&node))) break;
     }
@@ -483,7 +483,7 @@ TEST(EinsumLift, TensorContraction3D_2) {
         dynamic_cast<structured_control_flow::Block*>(&for_k_opt->root().at(1).first);
     EXPECT_TRUE(block_einsum);
     EXPECT_EQ(block_einsum->dataflow().nodes().size(), 6);
-    data_flow::LibraryNode* libnode;
+    data_flow::LibraryNode* libnode = nullptr;
     for (auto& node : block_einsum->dataflow().nodes()) {
         if ((libnode = dynamic_cast<data_flow::LibraryNode*>(&node))) break;
     }
@@ -580,7 +580,7 @@ TEST(EinsumLift, MatrixVectorMultiplication_1) {
         dynamic_cast<structured_control_flow::Block*>(&for_i_opt->root().at(1).first);
     EXPECT_TRUE(block_einsum);
     EXPECT_EQ(block_einsum->dataflow().nodes().size(), 5);
-    data_flow::LibraryNode* libnode;
+    data_flow::LibraryNode* libnode = nullptr;
     for (auto& node : block_einsum->dataflow().nodes()) {
         if ((libnode = dynamic_cast<data_flow::LibraryNode*>(&node))) break;
     }
@@ -667,7 +667,7 @@ TEST(EinsumLift, MatrixVectorMultiplication_2) {
         dynamic_cast<structured_control_flow::Block*>(&for_i_opt->root().at(1).first);
     EXPECT_TRUE(block_einsum);
     EXPECT_EQ(block_einsum->dataflow().nodes().size(), 5);
-    data_flow::LibraryNode* libnode;
+    data_flow::LibraryNode* libnode = nullptr;
     for (auto& node : block_einsum->dataflow().nodes()) {
         if ((libnode = dynamic_cast<data_flow::LibraryNode*>(&node))) break;
     }
@@ -746,7 +746,7 @@ TEST(EinsumLift, DiagonalExtraction_1) {
         dynamic_cast<structured_control_flow::Block*>(&for_i_opt->root().at(1).first);
     EXPECT_TRUE(block_einsum);
     EXPECT_EQ(block_einsum->dataflow().nodes().size(), 4);
-    data_flow::LibraryNode* libnode;
+    data_flow::LibraryNode* libnode = nullptr;
     for (auto& node : block_einsum->dataflow().nodes()) {
         if ((libnode = dynamic_cast<data_flow::LibraryNode*>(&node))) break;
     }
@@ -815,7 +815,7 @@ TEST(EinsumLift, DiagonalExtraction_2) {
         dynamic_cast<structured_control_flow::Block*>(&for_i_opt->root().at(0).first);
     EXPECT_TRUE(block_einsum);
     EXPECT_EQ(block_einsum->dataflow().nodes().size(), 3);
-    data_flow::LibraryNode* libnode;
+    data_flow::LibraryNode* libnode = nullptr;
     for (auto& node : block_einsum->dataflow().nodes()) {
         if ((libnode = dynamic_cast<data_flow::LibraryNode*>(&node))) break;
     }
@@ -877,7 +877,7 @@ TEST(EinsumLift, DiagonalExtraction_3) {
         dynamic_cast<structured_control_flow::Block*>(&for_i_opt->root().at(0).first);
     EXPECT_TRUE(block_einsum);
     EXPECT_EQ(block_einsum->dataflow().nodes().size(), 3);
-    data_flow::LibraryNode* libnode;
+    data_flow::LibraryNode* libnode = nullptr;
     for (auto& node : block_einsum->dataflow().nodes()) {
         if ((libnode = dynamic_cast<data_flow::LibraryNode*>(&node))) break;
     }
@@ -945,7 +945,7 @@ TEST(EinsumLift, MatrixTrace_1) {
     auto* block_einsum = dynamic_cast<structured_control_flow::Block*>(&root_opt.at(1).first);
     EXPECT_TRUE(block_einsum);
     EXPECT_EQ(block_einsum->dataflow().nodes().size(), 4);
-    data_flow::LibraryNode* libnode;
+    data_flow::LibraryNode* libnode = nullptr;
     for (auto& node : block_einsum->dataflow().nodes()) {
         if ((libnode = dynamic_cast<data_flow::LibraryNode*>(&node))) break;
     }
@@ -1017,7 +1017,7 @@ TEST(EinsumLift, MatrixTrace_2) {
     auto* block_einsum = dynamic_cast<structured_control_flow::Block*>(&root_opt.at(1).first);
     EXPECT_TRUE(block_einsum);
     EXPECT_EQ(block_einsum->dataflow().nodes().size(), 4);
-    data_flow::LibraryNode* libnode;
+    data_flow::LibraryNode* libnode = nullptr;
     for (auto& node : block_einsum->dataflow().nodes()) {
         if ((libnode = dynamic_cast<data_flow::LibraryNode*>(&node))) break;
     }
@@ -1103,7 +1103,7 @@ TEST(EinsumLift, MatrixCopy_1) {
         dynamic_cast<structured_control_flow::Block*>(&for_j_opt->root().at(1).first);
     EXPECT_TRUE(block_einsum);
     EXPECT_EQ(block_einsum->dataflow().nodes().size(), 4);
-    data_flow::LibraryNode* libnode;
+    data_flow::LibraryNode* libnode = nullptr;
     for (auto& node : block_einsum->dataflow().nodes()) {
         if ((libnode = dynamic_cast<data_flow::LibraryNode*>(&node))) break;
     }
@@ -1180,7 +1180,7 @@ TEST(EinsumLift, MatrixCopy_2) {
         dynamic_cast<structured_control_flow::Block*>(&for_j_opt->root().at(0).first);
     EXPECT_TRUE(block_einsum);
     EXPECT_EQ(block_einsum->dataflow().nodes().size(), 3);
-    data_flow::LibraryNode* libnode;
+    data_flow::LibraryNode* libnode = nullptr;
     for (auto& node : block_einsum->dataflow().nodes()) {
         if ((libnode = dynamic_cast<data_flow::LibraryNode*>(&node))) break;
     }
@@ -1250,7 +1250,7 @@ TEST(EinsumLift, MatrixCopy_3) {
         dynamic_cast<structured_control_flow::Block*>(&for_j_opt->root().at(0).first);
     EXPECT_TRUE(block_einsum);
     EXPECT_EQ(block_einsum->dataflow().nodes().size(), 3);
-    data_flow::LibraryNode* libnode;
+    data_flow::LibraryNode* libnode = nullptr;
     for (auto& node : block_einsum->dataflow().nodes()) {
         if ((libnode = dynamic_cast<data_flow::LibraryNode*>(&node))) break;
     }
@@ -1332,7 +1332,7 @@ TEST(EinsumLift, MatrixTranspose_1) {
         dynamic_cast<structured_control_flow::Block*>(&for_i_opt->root().at(1).first);
     EXPECT_TRUE(block_einsum);
     EXPECT_EQ(block_einsum->dataflow().nodes().size(), 4);
-    data_flow::LibraryNode* libnode;
+    data_flow::LibraryNode* libnode = nullptr;
     for (auto& node : block_einsum->dataflow().nodes()) {
         if ((libnode = dynamic_cast<data_flow::LibraryNode*>(&node))) break;
     }
@@ -1409,7 +1409,7 @@ TEST(EinsumLift, MatrixTranspose_2) {
         dynamic_cast<structured_control_flow::Block*>(&for_i_opt->root().at(0).first);
     EXPECT_TRUE(block_einsum);
     EXPECT_EQ(block_einsum->dataflow().nodes().size(), 3);
-    data_flow::LibraryNode* libnode;
+    data_flow::LibraryNode* libnode = nullptr;
     for (auto& node : block_einsum->dataflow().nodes()) {
         if ((libnode = dynamic_cast<data_flow::LibraryNode*>(&node))) break;
     }
@@ -1479,7 +1479,7 @@ TEST(EinsumLift, MatrixTranspose_3) {
         dynamic_cast<structured_control_flow::Block*>(&for_i_opt->root().at(0).first);
     EXPECT_TRUE(block_einsum);
     EXPECT_EQ(block_einsum->dataflow().nodes().size(), 3);
-    data_flow::LibraryNode* libnode;
+    data_flow::LibraryNode* libnode = nullptr;
     for (auto& node : block_einsum->dataflow().nodes()) {
         if ((libnode = dynamic_cast<data_flow::LibraryNode*>(&node))) break;
     }
@@ -1555,7 +1555,7 @@ TEST(EinsumLift, DotProduct_1) {
     auto* block_einsum = dynamic_cast<structured_control_flow::Block*>(&root_opt.at(1).first);
     EXPECT_TRUE(block_einsum);
     EXPECT_EQ(block_einsum->dataflow().nodes().size(), 5);
-    data_flow::LibraryNode* libnode;
+    data_flow::LibraryNode* libnode = nullptr;
     for (auto& node : block_einsum->dataflow().nodes()) {
         if ((libnode = dynamic_cast<data_flow::LibraryNode*>(&node))) break;
     }
@@ -1636,7 +1636,7 @@ TEST(EinsumLift, DotProduct_2) {
     auto* block_einsum = dynamic_cast<structured_control_flow::Block*>(&root_opt.at(1).first);
     EXPECT_TRUE(block_einsum);
     EXPECT_EQ(block_einsum->dataflow().nodes().size(), 5);
-    data_flow::LibraryNode* libnode;
+    data_flow::LibraryNode* libnode = nullptr;
     for (auto& node : block_einsum->dataflow().nodes()) {
         if ((libnode = dynamic_cast<data_flow::LibraryNode*>(&node))) break;
     }
@@ -1712,7 +1712,7 @@ TEST(EinsumLift, DotProduct_3) {
     auto* block_einsum = dynamic_cast<structured_control_flow::Block*>(&root_opt.at(1).first);
     EXPECT_TRUE(block_einsum);
     EXPECT_EQ(block_einsum->dataflow().nodes().size(), 5);
-    data_flow::LibraryNode* libnode;
+    data_flow::LibraryNode* libnode = nullptr;
     for (auto& node : block_einsum->dataflow().nodes()) {
         if ((libnode = dynamic_cast<data_flow::LibraryNode*>(&node))) break;
     }
@@ -1788,7 +1788,7 @@ TEST(EinsumLift, DotProduct_4) {
     auto* block_einsum = dynamic_cast<structured_control_flow::Block*>(&root_opt.at(1).first);
     EXPECT_TRUE(block_einsum);
     EXPECT_EQ(block_einsum->dataflow().nodes().size(), 5);
-    data_flow::LibraryNode* libnode;
+    data_flow::LibraryNode* libnode = nullptr;
     for (auto& node : block_einsum->dataflow().nodes()) {
         if ((libnode = dynamic_cast<data_flow::LibraryNode*>(&node))) break;
     }
@@ -1896,7 +1896,7 @@ TEST(EinsumLift, MatrixElementwiseMultiplication_1) {
         dynamic_cast<structured_control_flow::Block*>(&for_j_opt->root().at(1).first);
     EXPECT_TRUE(block_einsum);
     EXPECT_EQ(block_einsum->dataflow().nodes().size(), 6);
-    data_flow::LibraryNode* libnode;
+    data_flow::LibraryNode* libnode = nullptr;
     for (auto& node : block_einsum->dataflow().nodes()) {
         if ((libnode = dynamic_cast<data_flow::LibraryNode*>(&node))) break;
     }
@@ -1996,7 +1996,7 @@ TEST(EinsumLift, MatrixElementwiseMultiplication_2) {
         dynamic_cast<structured_control_flow::Block*>(&for_j_opt->root().at(0).first);
     EXPECT_TRUE(block_einsum);
     EXPECT_EQ(block_einsum->dataflow().nodes().size(), 5);
-    data_flow::LibraryNode* libnode;
+    data_flow::LibraryNode* libnode = nullptr;
     for (auto& node : block_einsum->dataflow().nodes()) {
         if ((libnode = dynamic_cast<data_flow::LibraryNode*>(&node))) break;
     }
@@ -2097,7 +2097,7 @@ TEST(EinsumLift, MatrixElementwiseMultiplication_3) {
         dynamic_cast<structured_control_flow::Block*>(&for_j_opt->root().at(1).first);
     EXPECT_TRUE(block_einsum);
     EXPECT_EQ(block_einsum->dataflow().nodes().size(), 6);
-    data_flow::LibraryNode* libnode;
+    data_flow::LibraryNode* libnode = nullptr;
     for (auto& node : block_einsum->dataflow().nodes()) {
         if ((libnode = dynamic_cast<data_flow::LibraryNode*>(&node))) break;
     }
@@ -2192,7 +2192,7 @@ TEST(EinsumLift, MatrixElementwiseMultiplication_4) {
         dynamic_cast<structured_control_flow::Block*>(&for_j_opt->root().at(0).first);
     EXPECT_TRUE(block_einsum);
     EXPECT_EQ(block_einsum->dataflow().nodes().size(), 5);
-    data_flow::LibraryNode* libnode;
+    data_flow::LibraryNode* libnode = nullptr;
     for (auto& node : block_einsum->dataflow().nodes()) {
         if ((libnode = dynamic_cast<data_flow::LibraryNode*>(&node))) break;
     }
@@ -2280,7 +2280,7 @@ TEST(EinsumLift, MatrixElementwiseMultiplication_5) {
         dynamic_cast<structured_control_flow::Block*>(&for_j_opt->root().at(0).first);
     EXPECT_TRUE(block_einsum);
     EXPECT_EQ(block_einsum->dataflow().nodes().size(), 5);
-    data_flow::LibraryNode* libnode;
+    data_flow::LibraryNode* libnode = nullptr;
     for (auto& node : block_einsum->dataflow().nodes()) {
         if ((libnode = dynamic_cast<data_flow::LibraryNode*>(&node))) break;
     }
@@ -2383,7 +2383,7 @@ TEST(EinsumLift, VectorScaling_1) {
         dynamic_cast<structured_control_flow::Block*>(&for_i_opt->root().at(1).first);
     EXPECT_TRUE(block_einsum);
     EXPECT_EQ(block_einsum->dataflow().nodes().size(), 7);
-    data_flow::LibraryNode* libnode;
+    data_flow::LibraryNode* libnode = nullptr;
     for (auto& node : block_einsum->dataflow().nodes()) {
         if ((libnode = dynamic_cast<data_flow::LibraryNode*>(&node))) break;
     }
@@ -2482,7 +2482,7 @@ TEST(EinsumLift, VectorScaling_2) {
         dynamic_cast<structured_control_flow::Block*>(&for_i_opt->root().at(0).first);
     EXPECT_TRUE(block_einsum);
     EXPECT_EQ(block_einsum->dataflow().nodes().size(), 6);
-    data_flow::LibraryNode* libnode;
+    data_flow::LibraryNode* libnode = nullptr;
     for (auto& node : block_einsum->dataflow().nodes()) {
         if ((libnode = dynamic_cast<data_flow::LibraryNode*>(&node))) break;
     }
@@ -2581,7 +2581,7 @@ TEST(EinsumLift, VectorScaling_3) {
         dynamic_cast<structured_control_flow::Block*>(&for_i_opt->root().at(1).first);
     EXPECT_TRUE(block_einsum);
     EXPECT_EQ(block_einsum->dataflow().nodes().size(), 7);
-    data_flow::LibraryNode* libnode;
+    data_flow::LibraryNode* libnode = nullptr;
     for (auto& node : block_einsum->dataflow().nodes()) {
         if ((libnode = dynamic_cast<data_flow::LibraryNode*>(&node))) break;
     }
@@ -2675,7 +2675,7 @@ TEST(EinsumLift, VectorScaling_4) {
         dynamic_cast<structured_control_flow::Block*>(&for_i_opt->root().at(0).first);
     EXPECT_TRUE(block_einsum);
     EXPECT_EQ(block_einsum->dataflow().nodes().size(), 6);
-    data_flow::LibraryNode* libnode;
+    data_flow::LibraryNode* libnode = nullptr;
     for (auto& node : block_einsum->dataflow().nodes()) {
         if ((libnode = dynamic_cast<data_flow::LibraryNode*>(&node))) break;
     }
@@ -2761,7 +2761,7 @@ TEST(EinsumLift, VectorScaling_5) {
         dynamic_cast<structured_control_flow::Block*>(&for_i_opt->root().at(0).first);
     EXPECT_TRUE(block_einsum);
     EXPECT_EQ(block_einsum->dataflow().nodes().size(), 6);
-    data_flow::LibraryNode* libnode;
+    data_flow::LibraryNode* libnode = nullptr;
     for (auto& node : block_einsum->dataflow().nodes()) {
         if ((libnode = dynamic_cast<data_flow::LibraryNode*>(&node))) break;
     }
@@ -2845,13 +2845,15 @@ TEST(EinsumLift, Means_1) {
     EXPECT_TRUE(for_j_opt);
     EXPECT_EQ(for_j_opt, &for_j);
     EXPECT_EQ(for_j_opt->root().size(), 3);
-    auto* block1_opt = dynamic_cast<structured_control_flow::Block*>(&for_j_opt->root().at(0).first);
+    auto* block1_opt =
+        dynamic_cast<structured_control_flow::Block*>(&for_j_opt->root().at(0).first);
     EXPECT_TRUE(block1_opt);
     EXPECT_EQ(block1_opt, &block1);
-    auto* block_einsum = dynamic_cast<structured_control_flow::Block*>(&for_j_opt->root().at(1).first);
+    auto* block_einsum =
+        dynamic_cast<structured_control_flow::Block*>(&for_j_opt->root().at(1).first);
     EXPECT_TRUE(block_einsum);
     EXPECT_EQ(block_einsum->dataflow().nodes().size(), 4);
-    data_flow::LibraryNode* libnode;
+    data_flow::LibraryNode* libnode = nullptr;
     for (auto& node : block_einsum->dataflow().nodes()) {
         if ((libnode = dynamic_cast<data_flow::LibraryNode*>(&node))) break;
     }
@@ -2868,7 +2870,8 @@ TEST(EinsumLift, Means_1) {
     EXPECT_EQ(einsum_node->in_indices().size(), 2);
     EXPECT_TRUE(subsets_eq(einsum_node->in_indices(0), subsets.at(conn2cont.at("_in0"))));
     EXPECT_TRUE(subsets_eq(einsum_node->in_indices(1), subsets.at(conn2cont.at("_out"))));
-    auto* block3_opt = dynamic_cast<structured_control_flow::Block*>(&for_j_opt->root().at(2).first);
+    auto* block3_opt =
+        dynamic_cast<structured_control_flow::Block*>(&for_j_opt->root().at(2).first);
     EXPECT_TRUE(block3_opt);
     EXPECT_EQ(block3_opt, &block3);
 }
