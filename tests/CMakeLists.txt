@@ -9,6 +9,7 @@ FetchContent_MakeAvailable(googletest)
 set(TEST_FILES
     einsum/einsum_dispatcher_test.cpp
     einsum/einsum_node_test.cpp
+    transformations/einsum_expand_test.cpp
     transformations/einsum_lift_fail_test.cpp
     transformations/einsum_lift_test.cpp
     test.cpp
