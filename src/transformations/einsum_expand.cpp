@@ -178,12 +178,9 @@ void EinsumExpand::apply(builder::StructuredSDFGBuilder& builder,
     if (dataflow_before_einsum) {
         auto& new_block_before = builder.add_block_before(this->loop_.root(), *block_einsum).first;
         ++loop_root_index;
-        std::unordered_map<data_flow::AccessNode*, std::pair<data_flow::AccessNode*, bool>>
-            access_node_map;
+        std::unordered_map<data_flow::AccessNode*, data_flow::AccessNode*> access_node_map;
         for (auto* access_node : block_einsum->dataflow().data_nodes()) {
-            auto* new_access_node = &builder.add_access(new_block_before, access_node->data(),
-                                                        access_node->debug_info());
-            access_node_map.insert({access_node, {new_access_node, false}});
+            access_node_map.insert({access_node, nullptr});
         }
         for (auto* node : topo_sort) {
             if (dynamic_cast<einsum::EinsumNode*>(node) == &this->einsum_node_) break;
@@ -198,25 +195,23 @@ void EinsumExpand::apply(builder::StructuredSDFGBuilder& builder,
                 new_code_node = &builder.add_library_node(new_block_before, *libnode);
             }
             for (auto& iedge : block_einsum->dataflow().in_edges(*code_node)) {
-                builder.add_memlet(
-                    new_block_before,
-                    *access_node_map.at(dynamic_cast<data_flow::AccessNode*>(&iedge.src())).first,
-                    iedge.src_conn(), *new_code_node, iedge.dst_conn(), iedge.subset(),
-                    iedge.debug_info());
-                access_node_map.at(dynamic_cast<data_flow::AccessNode*>(&iedge.src())).second =
-                    true;
+                auto* access_node = dynamic_cast<data_flow::AccessNode*>(&iedge.src());
+                if (!access_node_map.at(access_node))
+                    access_node_map.at(access_node) = &builder.add_access(
+                        new_block_before, access_node->data(), access_node->debug_info());
+                builder.add_memlet(new_block_before, *access_node_map.at(access_node),
+                                   iedge.src_conn(), *new_code_node, iedge.dst_conn(),
+                                   iedge.subset(), iedge.debug_info());
             }
             for (auto& oedge : block_einsum->dataflow().out_edges(*code_node)) {
-                builder.add_memlet(
-                    new_block_before, *new_code_node, oedge.src_conn(),
-                    *access_node_map.at(dynamic_cast<data_flow::AccessNode*>(&oedge.dst())).first,
-                    oedge.dst_conn(), oedge.subset(), oedge.debug_info());
-                access_node_map.at(dynamic_cast<data_flow::AccessNode*>(&oedge.dst())).second =
-                    true;
+                auto* access_node = dynamic_cast<data_flow::AccessNode*>(&oedge.dst());
+                if (!access_node_map.at(access_node))
+                    access_node_map.at(access_node) = &builder.add_access(
+                        new_block_before, access_node->data(), access_node->debug_info());
+                builder.add_memlet(new_block_before, *new_code_node, oedge.src_conn(),
+                                   *access_node_map.at(access_node), oedge.dst_conn(),
+                                   oedge.subset(), oedge.debug_info());
             }
-        }
-        for (auto& nodes : access_node_map) {
-            if (!nodes.second.second) builder.remove_node(new_block_before, *nodes.second.first);
         }
     }
 
@@ -243,12 +238,9 @@ void EinsumExpand::apply(builder::StructuredSDFGBuilder& builder,
     if (dataflow_after_einsum) {
         auto& new_block_after =
             builder.add_block(new_loop_after->root(), {}, block_einsum->debug_info());
-        std::unordered_map<data_flow::AccessNode*, std::pair<data_flow::AccessNode*, bool>>
-            access_node_map;
+        std::unordered_map<data_flow::AccessNode*, data_flow::AccessNode*> access_node_map;
         for (auto* access_node : block_einsum->dataflow().data_nodes()) {
-            auto* new_access_node = &builder.add_access(new_block_after, access_node->data(),
-                                                        access_node->debug_info());
-            access_node_map.insert({access_node, {new_access_node, false}});
+            access_node_map.insert({access_node, nullptr});
         }
         bool before_einsum_node = true;
         for (auto* node : topo_sort) {
@@ -267,25 +259,23 @@ void EinsumExpand::apply(builder::StructuredSDFGBuilder& builder,
                 new_code_node = &builder.add_library_node(new_block_after, *libnode);
             }
             for (auto& iedge : block_einsum->dataflow().in_edges(*code_node)) {
-                builder.add_memlet(
-                    new_block_after,
-                    *access_node_map.at(dynamic_cast<data_flow::AccessNode*>(&iedge.src())).first,
-                    iedge.src_conn(), *new_code_node, iedge.dst_conn(), iedge.subset(),
-                    iedge.debug_info());
-                access_node_map.at(dynamic_cast<data_flow::AccessNode*>(&iedge.src())).second =
-                    true;
+                auto* access_node = dynamic_cast<data_flow::AccessNode*>(&iedge.src());
+                if (!access_node_map.at(access_node))
+                    access_node_map.at(access_node) = &builder.add_access(
+                        new_block_after, access_node->data(), access_node->debug_info());
+                builder.add_memlet(new_block_after, *access_node_map.at(access_node),
+                                   iedge.src_conn(), *new_code_node, iedge.dst_conn(),
+                                   iedge.subset(), iedge.debug_info());
             }
             for (auto& oedge : block_einsum->dataflow().out_edges(*code_node)) {
-                builder.add_memlet(
-                    new_block_after, *new_code_node, oedge.src_conn(),
-                    *access_node_map.at(dynamic_cast<data_flow::AccessNode*>(&oedge.dst())).first,
-                    oedge.dst_conn(), oedge.subset(), oedge.debug_info());
-                access_node_map.at(dynamic_cast<data_flow::AccessNode*>(&oedge.dst())).second =
-                    true;
+                auto* access_node = dynamic_cast<data_flow::AccessNode*>(&oedge.dst());
+                if (!access_node_map.at(access_node))
+                    access_node_map.at(access_node) = &builder.add_access(
+                        new_block_after, access_node->data(), access_node->debug_info());
+                builder.add_memlet(new_block_after, *new_code_node, oedge.src_conn(),
+                                   *access_node_map.at(access_node), oedge.dst_conn(),
+                                   oedge.subset(), oedge.debug_info());
             }
-        }
-        for (auto& nodes : access_node_map) {
-            if (!nodes.second.second) builder.remove_node(new_block_after, *nodes.second.first);
         }
     }
 
