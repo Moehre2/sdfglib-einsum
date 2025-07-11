@@ -1,6 +1,8 @@
 #include "sdfg/transformations/einsum_expand.h"
 
 #include <sdfg/analysis/analysis.h>
+#include <sdfg/analysis/data_dependency_analysis.h>
+#include <sdfg/analysis/users.h>
 #include <sdfg/builder/structured_sdfg_builder.h>
 #include <sdfg/data_flow/access_node.h>
 #include <sdfg/data_flow/library_node.h>
@@ -16,6 +18,7 @@
 
 #include <functional>
 #include <nlohmann/json_fwd.hpp>
+#include <set>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -24,6 +27,36 @@
 
 namespace sdfg {
 namespace transformations {
+
+void EinsumExpand::visitElements(std::set<size_t>& elements,
+                                 const structured_control_flow::ControlFlowNode& node) {
+    elements.insert(node.element_id());
+    if (auto block = dynamic_cast<const structured_control_flow::Block*>(&node)) {
+        for (auto& node : block->dataflow().nodes()) elements.insert(node.element_id());
+    } else if (auto sequence = dynamic_cast<const structured_control_flow::Sequence*>(&node)) {
+        for (size_t i = 0; i < sequence->size(); ++i) {
+            this->visitElements(elements, sequence->at(i).first);
+            elements.insert(sequence->at(i).second.element_id());
+        }
+    } else if (auto if_else = dynamic_cast<const structured_control_flow::IfElse*>(&node)) {
+        for (size_t i = 0; i < if_else->size(); ++i)
+            this->visitElements(elements, if_else->at(i).first);
+    } else if (auto while_loop = dynamic_cast<const structured_control_flow::While*>(&node)) {
+        this->visitElements(elements, while_loop->root());
+    } else if (auto loop = dynamic_cast<const structured_control_flow::For*>(&node)) {
+        this->visitElements(elements, loop->root());
+    } else if (auto map_node = dynamic_cast<const structured_control_flow::Map*>(&node)) {
+        this->visitElements(elements, map_node->root());
+    }
+}
+
+bool EinsumExpand::subsetContainsSymbol(const data_flow::Subset& subset,
+                                        const symbolic::Symbol& symbol) {
+    for (auto& expr : subset) {
+        if (symbolic::uses(expr, symbol)) return true;
+    }
+    return false;
+}
 
 EinsumExpand::EinsumExpand(structured_control_flow::StructuredLoop& loop,
                            einsum::EinsumNode& einsum_node)
@@ -35,12 +68,14 @@ bool EinsumExpand::can_be_applied(builder::StructuredSDFGBuilder& builder,
                                   analysis::AnalysisManager& analysis_manager) {
     // Check that the einsum node is in a block in the loop
     structured_control_flow::Block* block_einsum = nullptr;
+    size_t loop_root_index;
     for (size_t i = 0; i < this->loop_.root().size(); ++i) {
         if (auto* block =
                 dynamic_cast<structured_control_flow::Block*>(&this->loop_.root().at(i).first)) {
             for (auto& node : block->dataflow().nodes()) {
                 if (this->einsum_node_.element_id() == node.element_id()) {
                     block_einsum = block;
+                    loop_root_index = i;
                     break;
                 }
             }
@@ -83,6 +118,44 @@ bool EinsumExpand::can_be_applied(builder::StructuredSDFGBuilder& builder,
         for (auto& index : indices) {
             if (symbolic::uses(index, this->loop_.indvar()) &&
                 !symbolic::eq(index, this->loop_.indvar()))
+                return false;
+        }
+    }
+
+    // Check that the output container contains the index variable of the loop
+    if (!this->subsetContainsSymbol(this->einsum_node_.out_indices(), this->loop_.indvar()))
+        return false;
+
+    // Determine the element ids of all elements inside the loop before the einsum node
+    auto topo_sort = block_einsum->dataflow().topological_sort();
+    std::set<size_t> elements_before_einsum;
+    for (size_t i = 0; i < loop_root_index; ++i) {
+        this->visitElements(elements_before_einsum, this->loop_.root().at(i).first);
+        elements_before_einsum.insert(this->loop_.root().at(i).second.element_id());
+    }
+    for (auto* node : topo_sort) {
+        if (dynamic_cast<einsum::EinsumNode*>(node) == &this->einsum_node_) break;
+        elements_before_einsum.insert(node->element_id());
+    }
+
+    // Create a map from each input connector to its input container of the einsum node
+    std::unordered_map<std::string, std::string> in_containers;
+    for (auto& iedge : block_einsum->dataflow().in_edges(this->einsum_node_)) {
+        auto& src = dynamic_cast<const data_flow::AccessNode&>(iedge.src());
+        in_containers.insert({iedge.dst_conn(), src.data()});
+    }
+
+    // Perform a user analysis
+    auto& users = analysis_manager.get<analysis::Users>();
+    users.run(analysis_manager);
+
+    // Check for every input container of the einsum node: If it is write accessed inside the loop
+    // before the einsum node, the loop index variable has to be in the input indices
+    for (size_t i = 0; i < this->einsum_node_.inputs().size(); ++i) {
+        for (auto* user : users.uses(in_containers.at(this->einsum_node_.input(i)))) {
+            if (user && user->use() == analysis::Use::WRITE && user->element() &&
+                elements_before_einsum.contains(user->element()->element_id()) &&
+                !this->subsetContainsSymbol(this->einsum_node_.in_indices(i), this->loop_.indvar()))
                 return false;
         }
     }
