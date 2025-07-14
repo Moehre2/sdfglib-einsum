@@ -7,11 +7,13 @@ set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googletest)
 
 set(TEST_FILES
+    blas/blas_dispatcher_test.cpp
     einsum/einsum_dispatcher_test.cpp
     einsum/einsum_node_test.cpp
     transformations/einsum_expand_test.cpp
     transformations/einsum_lift_fail_test.cpp
     transformations/einsum_lift_test.cpp
+    transformations/einsum2blas_test.cpp
     test.cpp
 )
 
