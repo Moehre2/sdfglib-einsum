@@ -83,7 +83,7 @@ TEST(EinsumLift, MatrixMatrixMultiplication_1) {
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
 
     transformations::EinsumLift transformation({for_j}, block2);
-    EXPECT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
+    ASSERT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
     transformation.apply(builder_opt, analysis_manager);
 
     auto& root_opt = builder_opt.subject().root();
@@ -178,7 +178,7 @@ TEST(EinsumLift, MatrixMatrixMultiplication_2) {
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
 
     transformations::EinsumLift transformation({for_j}, block2);
-    EXPECT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
+    ASSERT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
     transformation.apply(builder_opt, analysis_manager);
 
     auto& root_opt = builder_opt.subject().root();
@@ -303,7 +303,7 @@ TEST(EinsumLift, TensorContraction3D_1) {
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
 
     transformations::EinsumLift transformation({for_l, for_m, for_n}, block2);
-    EXPECT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
+    ASSERT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
     transformation.apply(builder_opt, analysis_manager);
 
     auto& root_opt = builder_opt.subject().root();
@@ -432,7 +432,7 @@ TEST(EinsumLift, TensorContraction3D_2) {
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
 
     transformations::EinsumLift transformation({for_l, for_m, for_n}, block2);
-    EXPECT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
+    ASSERT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
     transformation.apply(builder_opt, analysis_manager);
 
     auto& root_opt = builder_opt.subject().root();
@@ -537,7 +537,7 @@ TEST(EinsumLift, MatrixVectorMultiplication_1) {
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
 
     transformations::EinsumLift transformation({for_j}, block2);
-    EXPECT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
+    ASSERT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
     transformation.apply(builder_opt, analysis_manager);
 
     auto& root_opt = builder_opt.subject().root();
@@ -624,7 +624,7 @@ TEST(EinsumLift, MatrixVectorMultiplication_2) {
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
 
     transformations::EinsumLift transformation({for_j}, block2);
-    EXPECT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
+    ASSERT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
     transformation.apply(builder_opt, analysis_manager);
 
     auto& root_opt = builder_opt.subject().root();
@@ -703,7 +703,7 @@ TEST(EinsumLift, DiagonalExtraction_1) {
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
 
     transformations::EinsumLift transformation({}, block2);
-    EXPECT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
+    ASSERT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
     transformation.apply(builder_opt, analysis_manager);
 
     auto& root_opt = builder_opt.subject().root();
@@ -776,7 +776,7 @@ TEST(EinsumLift, DiagonalExtraction_2) {
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
 
     transformations::EinsumLift transformation({}, block1);
-    EXPECT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
+    ASSERT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
     transformation.apply(builder_opt, analysis_manager);
 
     auto& root_opt = builder_opt.subject().root();
@@ -838,7 +838,7 @@ TEST(EinsumLift, DiagonalExtraction_3) {
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
 
     transformations::EinsumLift transformation({}, block1);
-    EXPECT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
+    ASSERT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
     transformation.apply(builder_opt, analysis_manager);
 
     auto& root_opt = builder_opt.subject().root();
@@ -908,7 +908,7 @@ TEST(EinsumLift, MatrixTrace_1) {
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
 
     transformations::EinsumLift transformation({for_i}, block2);
-    EXPECT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
+    ASSERT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
     transformation.apply(builder_opt, analysis_manager);
 
     auto& root_opt = builder_opt.subject().root();
@@ -980,7 +980,7 @@ TEST(EinsumLift, MatrixTrace_2) {
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
 
     transformations::EinsumLift transformation({for_i}, block2);
-    EXPECT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
+    ASSERT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
     transformation.apply(builder_opt, analysis_manager);
 
     auto& root_opt = builder_opt.subject().root();
@@ -1056,7 +1056,7 @@ TEST(EinsumLift, MatrixCopy_1) {
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
 
     transformations::EinsumLift transformation({}, block2);
-    EXPECT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
+    ASSERT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
     transformation.apply(builder_opt, analysis_manager);
 
     auto& root_opt = builder_opt.subject().root();
@@ -1137,7 +1137,7 @@ TEST(EinsumLift, MatrixCopy_2) {
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
 
     transformations::EinsumLift transformation({}, block1);
-    EXPECT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
+    ASSERT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
     transformation.apply(builder_opt, analysis_manager);
 
     auto& root_opt = builder_opt.subject().root();
@@ -1207,7 +1207,7 @@ TEST(EinsumLift, MatrixCopy_3) {
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
 
     transformations::EinsumLift transformation({}, block1);
-    EXPECT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
+    ASSERT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
     transformation.apply(builder_opt, analysis_manager);
 
     auto& root_opt = builder_opt.subject().root();
@@ -1285,7 +1285,7 @@ TEST(EinsumLift, MatrixTranspose_1) {
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
 
     transformations::EinsumLift transformation({}, block2);
-    EXPECT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
+    ASSERT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
     transformation.apply(builder_opt, analysis_manager);
 
     auto& root_opt = builder_opt.subject().root();
@@ -1366,7 +1366,7 @@ TEST(EinsumLift, MatrixTranspose_2) {
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
 
     transformations::EinsumLift transformation({}, block1);
-    EXPECT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
+    ASSERT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
     transformation.apply(builder_opt, analysis_manager);
 
     auto& root_opt = builder_opt.subject().root();
@@ -1436,7 +1436,7 @@ TEST(EinsumLift, MatrixTranspose_3) {
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
 
     transformations::EinsumLift transformation({}, block1);
-    EXPECT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
+    ASSERT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
     transformation.apply(builder_opt, analysis_manager);
 
     auto& root_opt = builder_opt.subject().root();
@@ -1518,7 +1518,7 @@ TEST(EinsumLift, DotProduct_1) {
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
 
     transformations::EinsumLift transformation({for_i}, block2);
-    EXPECT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
+    ASSERT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
     transformation.apply(builder_opt, analysis_manager);
 
     auto& root_opt = builder_opt.subject().root();
@@ -1599,7 +1599,7 @@ TEST(EinsumLift, DotProduct_2) {
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
 
     transformations::EinsumLift transformation({for_i}, block2);
-    EXPECT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
+    ASSERT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
     transformation.apply(builder_opt, analysis_manager);
 
     auto& root_opt = builder_opt.subject().root();
@@ -1675,7 +1675,7 @@ TEST(EinsumLift, DotProduct_3) {
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
 
     transformations::EinsumLift transformation({for_i}, block2);
-    EXPECT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
+    ASSERT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
     transformation.apply(builder_opt, analysis_manager);
 
     auto& root_opt = builder_opt.subject().root();
@@ -1751,7 +1751,7 @@ TEST(EinsumLift, DotProduct_4) {
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
 
     transformations::EinsumLift transformation({for_i}, block2);
-    EXPECT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
+    ASSERT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
     transformation.apply(builder_opt, analysis_manager);
 
     auto& root_opt = builder_opt.subject().root();
@@ -1849,7 +1849,7 @@ TEST(EinsumLift, MatrixElementwiseMultiplication_1) {
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
 
     transformations::EinsumLift transformation({}, block2);
-    EXPECT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
+    ASSERT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
     transformation.apply(builder_opt, analysis_manager);
 
     auto& root_opt = builder_opt.subject().root();
@@ -1953,7 +1953,7 @@ TEST(EinsumLift, MatrixElementwiseMultiplication_2) {
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
 
     transformations::EinsumLift transformation({}, block1);
-    EXPECT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
+    ASSERT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
     transformation.apply(builder_opt, analysis_manager);
 
     auto& root_opt = builder_opt.subject().root();
@@ -2050,7 +2050,7 @@ TEST(EinsumLift, MatrixElementwiseMultiplication_3) {
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
 
     transformations::EinsumLift transformation({}, block2);
-    EXPECT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
+    ASSERT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
     transformation.apply(builder_opt, analysis_manager);
 
     auto& root_opt = builder_opt.subject().root();
@@ -2149,7 +2149,7 @@ TEST(EinsumLift, MatrixElementwiseMultiplication_4) {
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
 
     transformations::EinsumLift transformation({}, block1);
-    EXPECT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
+    ASSERT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
     transformation.apply(builder_opt, analysis_manager);
 
     auto& root_opt = builder_opt.subject().root();
@@ -2237,7 +2237,7 @@ TEST(EinsumLift, MatrixElementwiseMultiplication_5) {
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
 
     transformations::EinsumLift transformation({}, block1);
-    EXPECT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
+    ASSERT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
     transformation.apply(builder_opt, analysis_manager);
 
     auto& root_opt = builder_opt.subject().root();
@@ -2340,7 +2340,7 @@ TEST(EinsumLift, VectorScaling_1) {
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
 
     transformations::EinsumLift transformation({}, block2);
-    EXPECT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
+    ASSERT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
     transformation.apply(builder_opt, analysis_manager);
 
     auto& root_opt = builder_opt.subject().root();
@@ -2443,7 +2443,7 @@ TEST(EinsumLift, VectorScaling_2) {
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
 
     transformations::EinsumLift transformation({}, block1);
-    EXPECT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
+    ASSERT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
     transformation.apply(builder_opt, analysis_manager);
 
     auto& root_opt = builder_opt.subject().root();
@@ -2538,7 +2538,7 @@ TEST(EinsumLift, VectorScaling_3) {
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
 
     transformations::EinsumLift transformation({}, block2);
-    EXPECT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
+    ASSERT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
     transformation.apply(builder_opt, analysis_manager);
 
     auto& root_opt = builder_opt.subject().root();
@@ -2636,7 +2636,7 @@ TEST(EinsumLift, VectorScaling_4) {
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
 
     transformations::EinsumLift transformation({}, block1);
-    EXPECT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
+    ASSERT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
     transformation.apply(builder_opt, analysis_manager);
 
     auto& root_opt = builder_opt.subject().root();
@@ -2722,7 +2722,7 @@ TEST(EinsumLift, VectorScaling_5) {
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
 
     transformations::EinsumLift transformation({}, block1);
-    EXPECT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
+    ASSERT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
     transformation.apply(builder_opt, analysis_manager);
 
     auto& root_opt = builder_opt.subject().root();
@@ -2810,7 +2810,7 @@ TEST(EinsumLift, Means_1) {
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
 
     transformations::EinsumLift transformation({for_i}, block2);
-    EXPECT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
+    ASSERT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
     transformation.apply(builder_opt, analysis_manager);
 
     auto& root_opt = builder_opt.subject().root();
