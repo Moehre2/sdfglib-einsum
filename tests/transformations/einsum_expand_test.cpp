@@ -72,12 +72,12 @@ TEST(EinsumExpand, MatrixMatrixMultiplication_1) {
     auto& C2 = builder.add_access(block2, "C");
     auto& C3 = builder.add_access(block2, "C");
     auto& libnode =
-        builder.add_library_node<einsum::EinsumNode,
+        builder.add_library_node<einsum::EinsumNode, const std::vector<std::string>&,
+                                 const std::vector<std::string>&,
                                  std::vector<std::pair<symbolic::Symbol, symbolic::Expression>>,
                                  data_flow::Subset, std::vector<data_flow::Subset>>(
-            block2, einsum::LibraryNodeType_Einsum, {"_out"}, {"_in0", "_in1", "_out"}, false,
-            DebugInfo(), {{indvar_j, bound_j}}, subsets.at("C"),
-            {subsets.at("A"), subsets.at("B"), subsets.at("C")});
+            block2, DebugInfo(), {"_out"}, {"_in0", "_in1", "_out"}, {{indvar_j, bound_j}},
+            subsets.at("C"), {subsets.at("A"), subsets.at("B"), subsets.at("C")});
     builder.add_memlet(block2, A, "void", libnode, "_in0", {});
     builder.add_memlet(block2, B, "void", libnode, "_in1", {});
     builder.add_memlet(block2, C2, "void", libnode, "_out", {});
@@ -140,12 +140,12 @@ TEST(EinsumExpand, MatrixMatrixMultiplication_2) {
                                          {"_out", base_desc}, {{"0.0", base_desc}});
     builder.add_memlet(block1, tasklet1, "_out", C1, "void", subsets.at("C"));
     auto& libnode =
-        builder.add_library_node<einsum::EinsumNode,
+        builder.add_library_node<einsum::EinsumNode, const std::vector<std::string>&,
+                                 const std::vector<std::string>&,
                                  std::vector<std::pair<symbolic::Symbol, symbolic::Expression>>,
                                  data_flow::Subset, std::vector<data_flow::Subset>>(
-            block1, einsum::LibraryNodeType_Einsum, {"_out"}, {"_in0", "_in1", "_out"}, false,
-            DebugInfo(), {{indvar_j, bound_j}}, subsets.at("C"),
-            {subsets.at("A"), subsets.at("B"), subsets.at("C")});
+            block1, DebugInfo(), {"_out"}, {"_in0", "_in1", "_out"}, {{indvar_j, bound_j}},
+            subsets.at("C"), {subsets.at("A"), subsets.at("B"), subsets.at("C")});
     builder.add_memlet(block1, A, "void", libnode, "_in0", {});
     builder.add_memlet(block1, B, "void", libnode, "_in1", {});
     builder.add_memlet(block1, C1, "void", libnode, "_out", {});
@@ -211,11 +211,12 @@ TEST(EinsumExpand, MatrixMatrixMultiplication_3) {
     auto& C2 = builder.add_access(block2, "C");
     auto& C3 = builder.add_access(block2, "C");
     auto& libnode =
-        builder.add_library_node<einsum::EinsumNode,
+        builder.add_library_node<einsum::EinsumNode, const std::vector<std::string>&,
+                                 const std::vector<std::string>&,
                                  std::vector<std::pair<symbolic::Symbol, symbolic::Expression>>,
                                  data_flow::Subset, std::vector<data_flow::Subset>>(
-            block2, einsum::LibraryNodeType_Einsum, {"_out"}, {"_in0", "_in1", "_out"}, false,
-            DebugInfo(), {{indvar_j, bound_j}, {indvar_k, bound_k}}, subsets.at("C"),
+            block2, DebugInfo(), {"_out"}, {"_in0", "_in1", "_out"},
+            {{indvar_j, bound_j}, {indvar_k, bound_k}}, subsets.at("C"),
             {subsets.at("A"), subsets.at("B"), subsets.at("C")});
     builder.add_memlet(block2, A, "void", libnode, "_in0", {});
     builder.add_memlet(block2, B, "void", libnode, "_in1", {});
@@ -272,11 +273,12 @@ TEST(EinsumExpand, DiagonalExtraction_1) {
     auto& b2 = builder.add_access(block2, "b");
     auto& b3 = builder.add_access(block2, "b");
     auto& libnode =
-        builder.add_library_node<einsum::EinsumNode,
+        builder.add_library_node<einsum::EinsumNode, const std::vector<std::string>&,
+                                 const std::vector<std::string>&,
                                  std::vector<std::pair<symbolic::Symbol, symbolic::Expression>>,
                                  data_flow::Subset, std::vector<data_flow::Subset>>(
-            block2, einsum::LibraryNodeType_Einsum, {"_out"}, {"_in0", "_out"}, false, DebugInfo(),
-            {}, subsets.at("b"), {subsets.at("A"), subsets.at("b")});
+            block2, DebugInfo(), {"_out"}, {"_in0", "_out"}, {}, subsets.at("b"),
+            {subsets.at("A"), subsets.at("b")});
     builder.add_memlet(block2, A, "void", libnode, "_in0", {});
     builder.add_memlet(block2, b2, "void", libnode, "_out", {});
     builder.add_memlet(block2, libnode, "_out", b3, "void", {});
@@ -328,11 +330,12 @@ TEST(EinsumExpand, DiagonalExtraction_2) {
                                          {"_out", base_desc}, {{"0.0", base_desc}});
     builder.add_memlet(block1, tasklet1, "_out", b1, "void", subsets.at("b"));
     auto& libnode =
-        builder.add_library_node<einsum::EinsumNode,
+        builder.add_library_node<einsum::EinsumNode, const std::vector<std::string>&,
+                                 const std::vector<std::string>&,
                                  std::vector<std::pair<symbolic::Symbol, symbolic::Expression>>,
                                  data_flow::Subset, std::vector<data_flow::Subset>>(
-            block1, einsum::LibraryNodeType_Einsum, {"_out"}, {"_in0", "_out"}, false, DebugInfo(),
-            {}, subsets.at("b"), {subsets.at("A"), subsets.at("b")});
+            block1, DebugInfo(), {"_out"}, {"_in0", "_out"}, {}, subsets.at("b"),
+            {subsets.at("A"), subsets.at("b")});
     builder.add_memlet(block1, A, "void", libnode, "_in0", {});
     builder.add_memlet(block1, b1, "void", libnode, "_out", {});
     builder.add_memlet(block1, libnode, "_out", b2, "void", {});
@@ -380,11 +383,11 @@ TEST(EinsumExpand, DiagonalExtraction_3) {
     auto& A = builder.add_access(block1, "A");
     auto& b = builder.add_access(block1, "b");
     auto& libnode =
-        builder.add_library_node<einsum::EinsumNode,
+        builder.add_library_node<einsum::EinsumNode, const std::vector<std::string>&,
+                                 const std::vector<std::string>&,
                                  std::vector<std::pair<symbolic::Symbol, symbolic::Expression>>,
                                  data_flow::Subset, std::vector<data_flow::Subset>>(
-            block1, einsum::LibraryNodeType_Einsum, {"_out"}, {"_in0"}, false, DebugInfo(), {},
-            subsets.at("b"), {subsets.at("A")});
+            block1, DebugInfo(), {"_out"}, {"_in0"}, {}, subsets.at("b"), {subsets.at("A")});
     builder.add_memlet(block1, A, "void", libnode, "_in0", {});
     builder.add_memlet(block1, libnode, "_out", b, "void", {});
 
@@ -442,11 +445,12 @@ TEST(EinsumExpand, Means_1) {
     auto& b2 = builder.add_access(block2, "b");
     auto& b3 = builder.add_access(block2, "b");
     auto& libnode =
-        builder.add_library_node<einsum::EinsumNode,
+        builder.add_library_node<einsum::EinsumNode, const std::vector<std::string>&,
+                                 const std::vector<std::string>&,
                                  std::vector<std::pair<symbolic::Symbol, symbolic::Expression>>,
                                  data_flow::Subset, std::vector<data_flow::Subset>>(
-            block2, einsum::LibraryNodeType_Einsum, {"_out"}, {"_in0", "_out"}, false, DebugInfo(),
-            {{indvar_i, bound_i}}, subsets.at("b"), {subsets.at("A"), subsets.at("b")});
+            block2, DebugInfo(), {"_out"}, {"_in0", "_out"}, {{indvar_i, bound_i}}, subsets.at("b"),
+            {subsets.at("A"), subsets.at("b")});
     builder.add_memlet(block2, A, "void", libnode, "_in0", {});
     builder.add_memlet(block2, b2, "void", libnode, "_out", {});
     builder.add_memlet(block2, libnode, "_out", b3, "void", {});
@@ -514,11 +518,12 @@ TEST(EinsumExpand, Means_2) {
                                          {"_out", base_desc}, {{"0.0", base_desc}});
     builder.add_memlet(block1, tasklet1, "_out", b1, "void", {indvar_j});
     auto& libnode =
-        builder.add_library_node<einsum::EinsumNode,
+        builder.add_library_node<einsum::EinsumNode, const std::vector<std::string>&,
+                                 const std::vector<std::string>&,
                                  std::vector<std::pair<symbolic::Symbol, symbolic::Expression>>,
                                  data_flow::Subset, std::vector<data_flow::Subset>>(
-            block1, einsum::LibraryNodeType_Einsum, {"_out"}, {"_in0", "_out"}, false, DebugInfo(),
-            {{indvar_i, bound_i}}, subsets.at("b"), {subsets.at("A"), subsets.at("b")});
+            block1, DebugInfo(), {"_out"}, {"_in0", "_out"}, {{indvar_i, bound_i}}, subsets.at("b"),
+            {subsets.at("A"), subsets.at("b")});
     builder.add_memlet(block1, A, "void", libnode, "_in0", {});
     builder.add_memlet(block1, b1, "void", libnode, "_out", {});
     builder.add_memlet(block1, libnode, "_out", b2, "void", {});
@@ -581,11 +586,12 @@ TEST(EinsumExpand, TempValueDependency_1) {
     auto& c = builder.add_access(block2, "c");
     auto& tmp2 = builder.add_access(block2, "tmp");
     auto& libnode =
-        builder.add_library_node<einsum::EinsumNode,
+        builder.add_library_node<einsum::EinsumNode, const std::vector<std::string>&,
+                                 const std::vector<std::string>&,
                                  std::vector<std::pair<symbolic::Symbol, symbolic::Expression>>,
                                  data_flow::Subset, std::vector<data_flow::Subset>>(
-            block2, einsum::LibraryNodeType_Einsum, {"_out"}, {"_in1", "_in2"}, false, DebugInfo(),
-            {}, subsets.at("c"), {subsets.at("b"), {}});
+            block2, DebugInfo(), {"_out"}, {"_in1", "_in2"}, {}, subsets.at("c"),
+            {subsets.at("b"), {}});
     builder.add_memlet(block2, b, "void", libnode, "_in1", {});
     builder.add_memlet(block2, tmp2, "void", libnode, "_in2", {});
     builder.add_memlet(block2, libnode, "_out", c, "void", {});
@@ -633,11 +639,12 @@ TEST(EinsumExpand, TempValueDependency_2) {
     builder.add_memlet(block1, a, "void", tasklet1, "_in", subsets.at("a"));
     builder.add_memlet(block1, tasklet1, "_out", tmp, "void", {});
     auto& libnode =
-        builder.add_library_node<einsum::EinsumNode,
+        builder.add_library_node<einsum::EinsumNode, const std::vector<std::string>&,
+                                 const std::vector<std::string>&,
                                  std::vector<std::pair<symbolic::Symbol, symbolic::Expression>>,
                                  data_flow::Subset, std::vector<data_flow::Subset>>(
-            block1, einsum::LibraryNodeType_Einsum, {"_out"}, {"_in1", "_in2"}, false, DebugInfo(),
-            {}, subsets.at("c"), {subsets.at("b"), {}});
+            block1, DebugInfo(), {"_out"}, {"_in1", "_in2"}, {}, subsets.at("c"),
+            {subsets.at("b"), {}});
     builder.add_memlet(block1, b, "void", libnode, "_in1", {});
     builder.add_memlet(block1, tmp, "void", libnode, "_in2", {});
     builder.add_memlet(block1, libnode, "_out", c, "void", {});
@@ -680,11 +687,12 @@ TEST(EinsumExpand, TempValueDependency_3) {
     auto& b = builder.add_access(block1, "b");
     auto& tmp1 = builder.add_access(block1, "tmp");
     auto& libnode =
-        builder.add_library_node<einsum::EinsumNode,
+        builder.add_library_node<einsum::EinsumNode, const std::vector<std::string>&,
+                                 const std::vector<std::string>&,
                                  std::vector<std::pair<symbolic::Symbol, symbolic::Expression>>,
                                  data_flow::Subset, std::vector<data_flow::Subset>>(
-            block1, einsum::LibraryNodeType_Einsum, {"_out"}, {"_in1", "_in2"}, false, DebugInfo(),
-            {}, {}, {subsets.at("a"), subsets.at("b")});
+            block1, DebugInfo(), {"_out"}, {"_in1", "_in2"}, {}, {},
+            {subsets.at("a"), subsets.at("b")});
     builder.add_memlet(block1, a, "void", libnode, "_in1", {});
     builder.add_memlet(block1, b, "void", libnode, "_in2", {});
     builder.add_memlet(block1, libnode, "_out", tmp1, "void", {});
@@ -736,11 +744,12 @@ TEST(EinsumExpand, TempValueDependency_4) {
     auto& c = builder.add_access(block1, "c");
     auto& tmp = builder.add_access(block1, "tmp");
     auto& libnode =
-        builder.add_library_node<einsum::EinsumNode,
+        builder.add_library_node<einsum::EinsumNode, const std::vector<std::string>&,
+                                 const std::vector<std::string>&,
                                  std::vector<std::pair<symbolic::Symbol, symbolic::Expression>>,
                                  data_flow::Subset, std::vector<data_flow::Subset>>(
-            block1, einsum::LibraryNodeType_Einsum, {"_out"}, {"_in1", "_in2"}, false, DebugInfo(),
-            {}, {}, {subsets.at("a"), subsets.at("b")});
+            block1, DebugInfo(), {"_out"}, {"_in1", "_in2"}, {}, {},
+            {subsets.at("a"), subsets.at("b")});
     builder.add_memlet(block1, a, "void", libnode, "_in1", {});
     builder.add_memlet(block1, b, "void", libnode, "_in2", {});
     builder.add_memlet(block1, libnode, "_out", tmp, "void", {});

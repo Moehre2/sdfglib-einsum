@@ -231,12 +231,12 @@ void EinsumExpand::apply(builder::StructuredSDFGBuilder& builder,
     auto new_maps = this->einsum_node_.maps();
     new_maps.push_back({indvar, num_iterations});
     auto& libnode =
-        builder.add_library_node<einsum::EinsumNode,
+        builder.add_library_node<einsum::EinsumNode, const std::vector<std::string>&,
+                                 const std::vector<std::string>&,
                                  std::vector<std::pair<symbolic::Symbol, symbolic::Expression>>,
                                  data_flow::Subset, std::vector<data_flow::Subset>>(
-            new_block_einsum, einsum::LibraryNodeType_Einsum, this->einsum_node_.outputs(),
-            this->einsum_node_.inputs(), this->einsum_node_.side_effect(),
-            this->einsum_node_.debug_info(), new_maps, this->einsum_node_.out_indices(),
+            new_block_einsum, this->einsum_node_.debug_info(), this->einsum_node_.outputs(),
+            this->einsum_node_.inputs(), new_maps, this->einsum_node_.out_indices(),
             this->einsum_node_.in_indices());
 
     // Create the memlets in the new einsum block
@@ -265,7 +265,7 @@ void EinsumExpand::apply(builder::StructuredSDFGBuilder& builder,
                     &builder.add_tasklet(new_block_before, tasklet->code(), tasklet->output(),
                                          tasklet->inputs(), tasklet->debug_info());
             } else if (auto* libnode = dynamic_cast<data_flow::LibraryNode*>(node)) {
-                new_code_node = &builder.add_library_node(new_block_before, *libnode);
+                new_code_node = &builder.copy_library_node(new_block_before, *libnode);
             }
             for (auto& iedge : block_einsum->dataflow().in_edges(*code_node)) {
                 auto* access_node = dynamic_cast<data_flow::AccessNode*>(&iedge.src());
@@ -329,7 +329,7 @@ void EinsumExpand::apply(builder::StructuredSDFGBuilder& builder,
                     &builder.add_tasklet(new_block_after, tasklet->code(), tasklet->output(),
                                          tasklet->inputs(), tasklet->debug_info());
             } else if (auto* libnode = dynamic_cast<data_flow::LibraryNode*>(node)) {
-                new_code_node = &builder.add_library_node(new_block_after, *libnode);
+                new_code_node = &builder.copy_library_node(new_block_after, *libnode);
             }
             for (auto& iedge : block_einsum->dataflow().in_edges(*code_node)) {
                 auto* access_node = dynamic_cast<data_flow::AccessNode*>(&iedge.src());

@@ -28,9 +28,8 @@ class EinsumNode : public data_flow::LibraryNode {
 
    public:
     EinsumNode(size_t element_id, const DebugInfo& debug_info, const graph::Vertex vertex,
-               data_flow::DataFlowGraph& parent, const data_flow::LibraryNodeCode& code,
-               const std::vector<std::string>& outputs, const std::vector<std::string>& inputs,
-               const bool side_effect,
+               data_flow::DataFlowGraph& parent, const std::vector<std::string>& outputs,
+               const std::vector<std::string>& inputs,
                const std::vector<std::pair<symbolic::Symbol, symbolic::Expression>>& maps,
                const data_flow::Subset& out_indices,
                const std::vector<data_flow::Subset>& in_indices);

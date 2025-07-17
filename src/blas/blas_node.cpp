@@ -17,19 +17,14 @@ namespace sdfg {
 namespace blas {
 
 BLASNode::BLASNode(size_t element_id, const DebugInfo& debug_info, const graph::Vertex vertex,
-                   data_flow::DataFlowGraph& parent, const data_flow::LibraryNodeCode& code,
-                   const std::vector<std::string>& outputs, const std::vector<std::string>& inputs,
-                   const bool side_effect, symbolic::Expression m, symbolic::Expression n,
-                   symbolic::Expression k)
-    : data_flow::LibraryNode(element_id, debug_info, vertex, parent, code, outputs, inputs,
-                             side_effect),
+                   data_flow::DataFlowGraph& parent, const std::vector<std::string>& outputs,
+                   const std::vector<std::string>& inputs, symbolic::Expression m,
+                   symbolic::Expression n, symbolic::Expression k)
+    : data_flow::LibraryNode(element_id, debug_info, vertex, parent, LibraryNodeType_BLAS_gemm,
+                             outputs, inputs, false),
       m_(m),
       n_(n),
       k_(k) {
-    if (code.value() != LibraryNodeType_BLAS_gemm.value()) {
-        throw InvalidSDFGException("No BLAS library node code: " + code.value());
-    }
-
     if (outputs.size() != 1) {
         throw InvalidSDFGException("BLAS node can only have exactly one output");
     }
@@ -48,9 +43,9 @@ symbolic::Expression BLASNode::k() const { return this->k_; }
 std::unique_ptr<data_flow::DataFlowNode> BLASNode::clone(size_t element_id,
                                                          const graph::Vertex vertex,
                                                          data_flow::DataFlowGraph& parent) const {
-    return std::make_unique<BLASNode>(element_id, this->debug_info(), vertex, parent, this->code(),
-                                      this->outputs(), this->inputs(), this->side_effect(),
-                                      this->n(), this->m(), this->k());
+    return std::make_unique<BLASNode>(element_id, this->debug_info(), vertex, parent,
+                                      this->outputs(), this->inputs(), this->n(), this->m(),
+                                      this->k());
 }
 
 symbolic::SymbolSet BLASNode::symbols() const { return {}; }

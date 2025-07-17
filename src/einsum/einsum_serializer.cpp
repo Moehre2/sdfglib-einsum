@@ -77,7 +77,6 @@ data_flow::LibraryNode& EinsumSerializer::deserialize(
         throw std::runtime_error("Invalid library node code");
     }
 
-    auto side_effect = j["side_effect"].get<bool>();
     auto inputs = j["inputs"].get<std::vector<std::string>>();
     auto outputs = j["outputs"].get<std::vector<std::string>>();
 
@@ -107,11 +106,11 @@ data_flow::LibraryNode& EinsumSerializer::deserialize(
     }
 
     auto& einsum_node =
-        builder.add_library_node<EinsumNode,
+        builder.add_library_node<EinsumNode, const std::vector<std::string>&,
+                                 const std::vector<std::string>&,
                                  std::vector<std::pair<symbolic::Symbol, symbolic::Expression>>,
                                  data_flow::Subset, std::vector<data_flow::Subset>>(
-            parent, data_flow::LibraryNodeCode(code), outputs, inputs, side_effect, DebugInfo(),
-            maps, out_indices, in_indices);
+            parent, DebugInfo(), outputs, inputs, maps, out_indices, in_indices);
 
     return einsum_node;
 }

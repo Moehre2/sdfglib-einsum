@@ -434,11 +434,11 @@ void EinsumLift::apply(builder::StructuredSDFGBuilder& builder,
 
     // Add einsum node as library node
     auto& libnode =
-        builder.add_library_node<einsum::EinsumNode,
+        builder.add_library_node<einsum::EinsumNode, const std::vector<std::string>&,
+                                 const std::vector<std::string>&,
                                  std::vector<std::pair<symbolic::Symbol, symbolic::Expression>>,
                                  data_flow::Subset, std::vector<data_flow::Subset>>(
-            block, einsum::LibraryNodeType_Einsum, {"_out"}, in_conns, false, DebugInfo(), maps,
-            out_indices, in_indices);
+            block, DebugInfo(), {"_out"}, in_conns, maps, out_indices, in_indices);
 
     // Add memlets
     builder.add_memlet(block, libnode, "_out", out_access, "void", {});

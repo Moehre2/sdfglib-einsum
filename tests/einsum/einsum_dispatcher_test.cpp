@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include <sdfg/codegen/code_generators/c_code_generator.h>
+#include <sdfg/element.h>
 
 #include "fixtures/einsum.h"
 
@@ -75,11 +76,12 @@ TEST(EinsumDispatcher, MatrixMatrixMultiplication_partial1) {
     auto& C1 = builder.add_access(block, "C");
     auto& C2 = builder.add_access(block, "C");
     auto& libnode =
-        builder.add_library_node<einsum::EinsumNode,
+        builder.add_library_node<einsum::EinsumNode, const std::vector<std::string>&,
+                                 const std::vector<std::string>&,
                                  std::vector<std::pair<symbolic::Symbol, symbolic::Expression>>,
                                  data_flow::Subset, std::vector<data_flow::Subset>>(
-            block, einsum::LibraryNodeType_Einsum, {"_out"}, {"_out", "_in1", "_in2"}, false,
-            DebugInfo(), {{j, symbolic::symbol("J")}, {k, symbolic::symbol("K")}}, {i, k},
+            block, DebugInfo(), {"_out"}, {"_out", "_in1", "_in2"},
+            {{j, symbolic::symbol("J")}, {k, symbolic::symbol("K")}}, {i, k},
             {{i, k}, {i, j}, {j, k}});
     builder.add_memlet(block, C1, "void", libnode, "_out", {});
     builder.add_memlet(block, A, "void", libnode, "_in1", {});
@@ -157,11 +159,12 @@ TEST(EinsumDispatcher, MatrixMatrixMultiplication_partial2) {
     auto& C1 = builder.add_access(block, "C");
     auto& C2 = builder.add_access(block, "C");
     auto& libnode =
-        builder.add_library_node<einsum::EinsumNode,
+        builder.add_library_node<einsum::EinsumNode, const std::vector<std::string>&,
+                                 const std::vector<std::string>&,
                                  std::vector<std::pair<symbolic::Symbol, symbolic::Expression>>,
                                  data_flow::Subset, std::vector<data_flow::Subset>>(
-            block, einsum::LibraryNodeType_Einsum, {"_out"}, {"_out", "_in1", "_in2"}, false,
-            DebugInfo(), {{j, symbolic::symbol("J")}}, {i, k}, {{i, k}, {i, j}, {j, k}});
+            block, DebugInfo(), {"_out"}, {"_out", "_in1", "_in2"}, {{j, symbolic::symbol("J")}},
+            {i, k}, {{i, k}, {i, j}, {j, k}});
     builder.add_memlet(block, C1, "void", libnode, "_out", {});
     builder.add_memlet(block, A, "void", libnode, "_in1", {});
     builder.add_memlet(block, B, "void", libnode, "_in2", {});

@@ -104,11 +104,11 @@ void Einsum2BLAS::apply(builder::StructuredSDFGBuilder& builder,
         dynamic_cast<structured_control_flow::Block*>(this->einsum_node_.get_parent().get_parent());
 
     // Add the BLAS node
-    auto& libnode = builder.add_library_node<blas::BLASNode, symbolic::Expression,
+    auto& libnode = builder.add_library_node<blas::BLASNode, const std::vector<std::string>&,
+                                             const std::vector<std::string>&, symbolic::Expression,
                                              symbolic::Expression, symbolic::Expression>(
-        *block, blas::LibraryNodeType_BLAS_gemm, this->einsum_node_.outputs(),
-        this->einsum_node_.inputs(), this->einsum_node_.side_effect(),
-        this->einsum_node_.debug_info(), bound_i, bound_j, bound_k);
+        *block, DebugInfo(), this->einsum_node_.outputs(), this->einsum_node_.inputs(), bound_i,
+        bound_j, bound_k);
 
     // Copy the memlets
     for (auto& iedge : block->dataflow().in_edges(this->einsum_node_)) {
@@ -122,12 +122,12 @@ void Einsum2BLAS::apply(builder::StructuredSDFGBuilder& builder,
 
     // Remove the old memlets
     while (block->dataflow().in_edges(this->einsum_node_).begin() !=
-    block->dataflow().in_edges(this->einsum_node_).end()) {
-       builder.remove_memlet(*block, *block->dataflow().in_edges(this->einsum_node_).begin());
+           block->dataflow().in_edges(this->einsum_node_).end()) {
+        builder.remove_memlet(*block, *block->dataflow().in_edges(this->einsum_node_).begin());
     }
     while (block->dataflow().out_edges(this->einsum_node_).begin() !=
-    block->dataflow().out_edges(this->einsum_node_).end()) {
-       builder.remove_memlet(*block, *block->dataflow().out_edges(this->einsum_node_).begin());
+           block->dataflow().out_edges(this->einsum_node_).end()) {
+        builder.remove_memlet(*block, *block->dataflow().out_edges(this->einsum_node_).begin());
     }
 
     // Remove the einsum node

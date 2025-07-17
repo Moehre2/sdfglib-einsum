@@ -8,6 +8,9 @@
 #include <sdfg/types/scalar.h>
 #include <sdfg/types/type.h>
 
+#include <string>
+#include <vector>
+
 #include "sdfg/blas/blas_node.h"
 
 using namespace sdfg;
@@ -38,10 +41,10 @@ TEST(BLASDispatcher, MatrixMatrixMultiplication) {
     auto& B = builder.add_access(block, "B");
     auto& C1 = builder.add_access(block, "C");
     auto& C2 = builder.add_access(block, "C");
-    auto& libnode = builder.add_library_node<blas::BLASNode, symbolic::Expression,
+    auto& libnode = builder.add_library_node<blas::BLASNode, const std::vector<std::string>&,
+                                             const std::vector<std::string>&, symbolic::Expression,
                                              symbolic::Expression, symbolic::Expression>(
-        block, blas::LibraryNodeType_BLAS_gemm, {"_out"}, {"_in1", "_in2", "_out"}, false,
-        DebugInfo(), I, J, K);
+        block, DebugInfo(), {"_out"}, {"_in1", "_in2", "_out"}, I, J, K);
     builder.add_memlet(block, A, "void", libnode, "_in1", {});
     builder.add_memlet(block, B, "void", libnode, "_in2", {});
     builder.add_memlet(block, C1, "void", libnode, "_out", {});

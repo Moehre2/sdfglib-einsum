@@ -17,14 +17,13 @@ namespace sdfg {
 namespace einsum {
 
 EinsumNode::EinsumNode(size_t element_id, const DebugInfo& debug_info, const graph::Vertex vertex,
-                       data_flow::DataFlowGraph& parent, const data_flow::LibraryNodeCode& code,
-                       const std::vector<std::string>& outputs,
-                       const std::vector<std::string>& inputs, const bool side_effect,
+                       data_flow::DataFlowGraph& parent, const std::vector<std::string>& outputs,
+                       const std::vector<std::string>& inputs,
                        const std::vector<std::pair<symbolic::Symbol, symbolic::Expression>>& maps,
                        const data_flow::Subset& out_indices,
                        const std::vector<data_flow::Subset>& in_indices)
-    : data_flow::LibraryNode(element_id, debug_info, vertex, parent, code, outputs, inputs,
-                             side_effect),
+    : data_flow::LibraryNode(element_id, debug_info, vertex, parent, LibraryNodeType_Einsum,
+                             outputs, inputs, false),
       maps_(maps),
       out_indices_(out_indices),
       in_indices_(in_indices) {
@@ -114,9 +113,9 @@ const symbolic::Expression& EinsumNode::in_index(size_t index1, size_t index2) c
 std::unique_ptr<data_flow::DataFlowNode> EinsumNode::clone(size_t element_id,
                                                            const graph::Vertex vertex,
                                                            data_flow::DataFlowGraph& parent) const {
-    return std::make_unique<EinsumNode>(
-        element_id, this->debug_info(), vertex, parent, this->code(), this->outputs(),
-        this->inputs(), this->side_effect(), this->maps(), this->out_indices(), this->in_indices());
+    return std::make_unique<EinsumNode>(element_id, this->debug_info(), vertex, parent,
+                                        this->outputs(), this->inputs(), this->maps(),
+                                        this->out_indices(), this->in_indices());
 }
 
 symbolic::SymbolSet EinsumNode::symbols() const {

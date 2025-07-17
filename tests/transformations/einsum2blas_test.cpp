@@ -11,6 +11,7 @@
 #include <sdfg/types/scalar.h>
 #include <sdfg/types/type.h>
 
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -47,11 +48,11 @@ TEST(Einsum2BLAS, MatrixMatrixMultiplication) {
     auto& C1 = builder.add_access(block, "C");
     auto& C2 = builder.add_access(block, "C");
     auto& libnode =
-        builder.add_library_node<einsum::EinsumNode,
+        builder.add_library_node<einsum::EinsumNode, const std::vector<std::string>&,
+                                 const std::vector<std::string>&,
                                  std::vector<std::pair<symbolic::Symbol, symbolic::Expression>>,
                                  data_flow::Subset, std::vector<data_flow::Subset>>(
-            block, einsum::LibraryNodeType_Einsum, {"_out"}, {"_in1", "_in2", "_out"}, false,
-            DebugInfo(),
+            block, DebugInfo(), {"_out"}, {"_in1", "_in2", "_out"},
             {{i, symbolic::symbol("I")}, {j, symbolic::symbol("J")}, {k, symbolic::symbol("K")}},
             {i, k}, {{i, j}, {j, k}, {i, k}});
     builder.add_memlet(block, A, "void", libnode, "_in1", {});

@@ -21,9 +21,8 @@ class BLASNode : public data_flow::LibraryNode {
 
    public:
     BLASNode(size_t element_id, const DebugInfo& debug_info, const graph::Vertex vertex,
-             data_flow::DataFlowGraph& parent, const data_flow::LibraryNodeCode& code,
-             const std::vector<std::string>& outputs, const std::vector<std::string>& inputs,
-             const bool side_effect, symbolic::Expression n, symbolic::Expression m,
+             data_flow::DataFlowGraph& parent, const std::vector<std::string>& outputs,
+             const std::vector<std::string>& inputs, symbolic::Expression n, symbolic::Expression m,
              symbolic::Expression k);
 
     BLASNode(const BLASNode&) = delete;
