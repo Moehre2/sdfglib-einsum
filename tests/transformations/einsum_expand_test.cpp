@@ -4,32 +4,26 @@
 #include <sdfg/analysis/analysis.h>
 #include <sdfg/builder/structured_sdfg_builder.h>
 #include <sdfg/codegen/code_generators/c_code_generator.h>
+#include <sdfg/data_flow/library_node.h>
 #include <sdfg/data_flow/memlet.h>
 #include <sdfg/element.h>
 #include <sdfg/function.h>
+#include <sdfg/structured_control_flow/block.h>
+#include <sdfg/structured_control_flow/for.h>
 #include <sdfg/symbolic/symbolic.h>
 #include <sdfg/types/pointer.h>
 #include <sdfg/types/scalar.h>
 #include <sdfg/types/type.h>
 
-#include <iostream>
 #include <string>
 #include <unordered_map>
 #include <utility>
 #include <vector>
 
+#include "helper.h"
 #include "sdfg/einsum/einsum_node.h"
 
 using namespace sdfg;
-
-#define gen_for(index, bound, root_)                                              \
-    auto indvar_##index = symbolic::symbol(#index);                               \
-    auto bound_##index = symbolic::symbol(#bound);                                \
-    auto condition_##index = symbolic::Lt(indvar_##index, bound_##index);         \
-    auto update_##index = symbolic::add(indvar_##index, symbolic::one());         \
-    auto& for_##index = builder.add_for(root_, indvar_##index, condition_##index, \
-                                        symbolic::zero(), update_##index);        \
-    auto& body_##index = for_##index.root();
 
 TEST(EinsumExpand, MatrixMatrixMultiplication_1) {
     builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
@@ -84,7 +78,7 @@ TEST(EinsumExpand, MatrixMatrixMultiplication_1) {
     builder.add_memlet(block2, libnode, "_out", C3, "void", {});
 
     auto* einsum_node = dynamic_cast<einsum::EinsumNode*>(&libnode);
-    EXPECT_TRUE(einsum_node);
+    ASSERT_TRUE(einsum_node);
 
     auto sdfg = builder.move();
 
@@ -95,11 +89,44 @@ TEST(EinsumExpand, MatrixMatrixMultiplication_1) {
     EXPECT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
     transformation.apply(builder_opt, analysis_manager);
 
-    auto sdfg_opt = builder_opt.move();
-    codegen::CCodeGenerator generator(*sdfg_opt);
-    EXPECT_TRUE(generator.generate());
-    std::cout << generator.function_definition() << " {" << std::endl
-              << generator.main().str() << "}" << std::endl;
+    auto& root_opt = builder_opt.subject().root();
+    AT_LEAST(root_opt.size(), 1);
+    auto* for_i_opt = dynamic_cast<structured_control_flow::For*>(&root_opt.at(0).first);
+    ASSERT_TRUE(for_i_opt);
+    EXPECT_EQ(for_i_opt, &for_i);
+    AT_LEAST(for_i_opt->root().size(), 2);
+    auto* for_k_opt = dynamic_cast<structured_control_flow::For*>(&for_i_opt->root().at(0).first);
+    ASSERT_TRUE(for_k_opt);
+    EXPECT_EQ(for_k_opt, &for_k);
+    AT_LEAST(for_k_opt->root().size(), 1);
+    auto* block1_opt =
+        dynamic_cast<structured_control_flow::Block*>(&for_k_opt->root().at(0).first);
+    ASSERT_TRUE(block1_opt);
+    EXPECT_EQ(block1_opt, &block1);
+    auto* block_einsum =
+        dynamic_cast<structured_control_flow::Block*>(&for_i_opt->root().at(1).first);
+    ASSERT_TRUE(block_einsum);
+    AT_LEAST(block_einsum->dataflow().nodes().size(), 5);
+    data_flow::LibraryNode* libnode_opt = nullptr;
+    for (auto& node : block_einsum->dataflow().nodes()) {
+        if ((libnode_opt = dynamic_cast<data_flow::LibraryNode*>(&node))) break;
+    }
+    ASSERT_TRUE(libnode_opt);
+    auto* einsum_node_opt = dynamic_cast<einsum::EinsumNode*>(libnode_opt);
+    ASSERT_TRUE(einsum_node_opt);
+    EXPECT_EQ(einsum_node_opt->outputs(), std::vector<std::string>({"_out"}));
+    EXPECT_EQ(einsum_node_opt->inputs(), std::vector<std::string>({"_in0", "_in1", "_out"}));
+    AT_LEAST(einsum_node_opt->maps().size(), 2);
+    EXPECT_TRUE(symbolic::eq(einsum_node_opt->indvar(0), indvar_j));
+    EXPECT_TRUE(symbolic::eq(einsum_node_opt->num_iteration(0), bound_j));
+    EXPECT_TRUE(symbolic::eq(einsum_node_opt->indvar(1), indvar_k));
+    EXPECT_TRUE(symbolic::eq(einsum_node_opt->num_iteration(1), bound_k));
+    EXPECT_TRUE(subsets_eq(einsum_node_opt->out_indices(), subsets.at("C")));
+    auto conn2cont = get_conn2cont(*block_einsum, *libnode_opt);
+    AT_LEAST(einsum_node_opt->in_indices().size(), 3);
+    EXPECT_TRUE(subsets_eq(einsum_node_opt->in_indices(0), subsets.at(conn2cont.at("_in0"))));
+    EXPECT_TRUE(subsets_eq(einsum_node_opt->in_indices(1), subsets.at(conn2cont.at("_in1"))));
+    EXPECT_TRUE(subsets_eq(einsum_node_opt->in_indices(2), subsets.at(conn2cont.at("_out"))));
 }
 
 TEST(EinsumExpand, MatrixMatrixMultiplication_2) {
@@ -163,11 +190,43 @@ TEST(EinsumExpand, MatrixMatrixMultiplication_2) {
     EXPECT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
     transformation.apply(builder_opt, analysis_manager);
 
-    auto sdfg_opt = builder_opt.move();
-    codegen::CCodeGenerator generator(*sdfg_opt);
-    EXPECT_TRUE(generator.generate());
-    std::cout << generator.function_definition() << " {" << std::endl
-              << generator.main().str() << "}" << std::endl;
+    auto& root_opt = builder_opt.subject().root();
+    AT_LEAST(root_opt.size(), 1);
+    auto* for_i_opt = dynamic_cast<structured_control_flow::For*>(&root_opt.at(0).first);
+    ASSERT_TRUE(for_i_opt);
+    EXPECT_EQ(for_i_opt, &for_i);
+    AT_LEAST(for_i_opt->root().size(), 2);
+    auto* for_k_opt = dynamic_cast<structured_control_flow::For*>(&for_i_opt->root().at(0).first);
+    ASSERT_TRUE(for_k_opt);
+    EXPECT_EQ(for_k_opt, &for_k);
+    AT_LEAST(for_k_opt->root().size(), 1);
+    auto* block_opt = dynamic_cast<structured_control_flow::Block*>(&for_k_opt->root().at(0).first);
+    ASSERT_TRUE(block_opt);
+    EXPECT_EQ(block_opt->dataflow().nodes().size(), 2);
+    auto* block_einsum =
+        dynamic_cast<structured_control_flow::Block*>(&for_i_opt->root().at(1).first);
+    ASSERT_TRUE(block_einsum);
+    AT_LEAST(block_einsum->dataflow().nodes().size(), 5);
+    data_flow::LibraryNode* libnode_opt = nullptr;
+    for (auto& node : block_einsum->dataflow().nodes()) {
+        if ((libnode_opt = dynamic_cast<data_flow::LibraryNode*>(&node))) break;
+    }
+    ASSERT_TRUE(libnode_opt);
+    auto* einsum_node_opt = dynamic_cast<einsum::EinsumNode*>(libnode_opt);
+    ASSERT_TRUE(einsum_node_opt);
+    EXPECT_EQ(einsum_node_opt->outputs(), std::vector<std::string>({"_out"}));
+    EXPECT_EQ(einsum_node_opt->inputs(), std::vector<std::string>({"_in0", "_in1", "_out"}));
+    AT_LEAST(einsum_node_opt->maps().size(), 2);
+    EXPECT_TRUE(symbolic::eq(einsum_node_opt->indvar(0), indvar_j));
+    EXPECT_TRUE(symbolic::eq(einsum_node_opt->num_iteration(0), bound_j));
+    EXPECT_TRUE(symbolic::eq(einsum_node_opt->indvar(1), indvar_k));
+    EXPECT_TRUE(symbolic::eq(einsum_node_opt->num_iteration(1), bound_k));
+    EXPECT_TRUE(subsets_eq(einsum_node_opt->out_indices(), subsets.at("C")));
+    auto conn2cont = get_conn2cont(*block_einsum, *libnode_opt);
+    AT_LEAST(einsum_node_opt->in_indices().size(), 3);
+    EXPECT_TRUE(subsets_eq(einsum_node_opt->in_indices(0), subsets.at(conn2cont.at("_in0"))));
+    EXPECT_TRUE(subsets_eq(einsum_node_opt->in_indices(1), subsets.at(conn2cont.at("_in1"))));
+    EXPECT_TRUE(subsets_eq(einsum_node_opt->in_indices(2), subsets.at(conn2cont.at("_out"))));
 }
 
 TEST(EinsumExpand, MatrixMatrixMultiplication_3) {
@@ -235,11 +294,45 @@ TEST(EinsumExpand, MatrixMatrixMultiplication_3) {
     EXPECT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
     transformation.apply(builder_opt, analysis_manager);
 
-    auto sdfg_opt = builder_opt.move();
-    codegen::CCodeGenerator generator(*sdfg_opt);
-    EXPECT_TRUE(generator.generate());
-    std::cout << generator.function_definition() << " {" << std::endl
-              << generator.main().str() << "}" << std::endl;
+    auto& root_opt = builder_opt.subject().root();
+    AT_LEAST(root_opt.size(), 2);
+    auto* for_i_opt = dynamic_cast<structured_control_flow::For*>(&root_opt.at(0).first);
+    ASSERT_TRUE(for_i_opt);
+    EXPECT_EQ(for_i_opt, &for_i);
+    AT_LEAST(for_i_opt->root().size(), 1);
+    auto* for_k_opt = dynamic_cast<structured_control_flow::For*>(&for_i_opt->root().at(0).first);
+    ASSERT_TRUE(for_k_opt);
+    EXPECT_EQ(for_k_opt, &for_k);
+    AT_LEAST(for_k_opt->root().size(), 1);
+    auto* block1_opt =
+        dynamic_cast<structured_control_flow::Block*>(&for_k_opt->root().at(0).first);
+    ASSERT_TRUE(block1_opt);
+    EXPECT_EQ(block1_opt, &block1);
+    auto* block_einsum = dynamic_cast<structured_control_flow::Block*>(&root_opt.at(1).first);
+    ASSERT_TRUE(block_einsum);
+    AT_LEAST(block_einsum->dataflow().nodes().size(), 5);
+    data_flow::LibraryNode* libnode_opt = nullptr;
+    for (auto& node : block_einsum->dataflow().nodes()) {
+        if ((libnode_opt = dynamic_cast<data_flow::LibraryNode*>(&node))) break;
+    }
+    ASSERT_TRUE(libnode_opt);
+    auto* einsum_node_opt = dynamic_cast<einsum::EinsumNode*>(libnode_opt);
+    ASSERT_TRUE(einsum_node_opt);
+    EXPECT_EQ(einsum_node_opt->outputs(), std::vector<std::string>({"_out"}));
+    EXPECT_EQ(einsum_node_opt->inputs(), std::vector<std::string>({"_in0", "_in1", "_out"}));
+    AT_LEAST(einsum_node_opt->maps().size(), 3);
+    EXPECT_TRUE(symbolic::eq(einsum_node_opt->indvar(0), indvar_j));
+    EXPECT_TRUE(symbolic::eq(einsum_node_opt->num_iteration(0), bound_j));
+    EXPECT_TRUE(symbolic::eq(einsum_node_opt->indvar(1), indvar_k));
+    EXPECT_TRUE(symbolic::eq(einsum_node_opt->num_iteration(1), bound_k));
+    EXPECT_TRUE(symbolic::eq(einsum_node_opt->indvar(2), indvar_i));
+    EXPECT_TRUE(symbolic::eq(einsum_node_opt->num_iteration(2), bound_i));
+    EXPECT_TRUE(subsets_eq(einsum_node_opt->out_indices(), subsets.at("C")));
+    auto conn2cont = get_conn2cont(*block_einsum, *libnode_opt);
+    AT_LEAST(einsum_node_opt->in_indices().size(), 3);
+    EXPECT_TRUE(subsets_eq(einsum_node_opt->in_indices(0), subsets.at(conn2cont.at("_in0"))));
+    EXPECT_TRUE(subsets_eq(einsum_node_opt->in_indices(1), subsets.at(conn2cont.at("_in1"))));
+    EXPECT_TRUE(subsets_eq(einsum_node_opt->in_indices(2), subsets.at(conn2cont.at("_out"))));
 }
 
 TEST(EinsumExpand, DiagonalExtraction_1) {
@@ -295,11 +388,36 @@ TEST(EinsumExpand, DiagonalExtraction_1) {
     EXPECT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
     transformation.apply(builder_opt, analysis_manager);
 
-    auto sdfg_opt = builder_opt.move();
-    codegen::CCodeGenerator generator(*sdfg_opt);
-    EXPECT_TRUE(generator.generate());
-    std::cout << generator.function_definition() << " {" << std::endl
-              << generator.main().str() << "}" << std::endl;
+    auto& root_opt = builder_opt.subject().root();
+    AT_LEAST(root_opt.size(), 2);
+    auto* for_i_opt = dynamic_cast<structured_control_flow::For*>(&root_opt.at(0).first);
+    ASSERT_TRUE(for_i_opt);
+    EXPECT_EQ(for_i_opt, &for_i);
+    AT_LEAST(for_i_opt->root().size(), 1);
+    auto* block1_opt =
+        dynamic_cast<structured_control_flow::Block*>(&for_i_opt->root().at(0).first);
+    ASSERT_TRUE(block1_opt);
+    EXPECT_EQ(block1_opt, &block1);
+    auto* block_einsum = dynamic_cast<structured_control_flow::Block*>(&root_opt.at(1).first);
+    ASSERT_TRUE(block_einsum);
+    AT_LEAST(block_einsum->dataflow().nodes().size(), 4);
+    data_flow::LibraryNode* libnode_opt = nullptr;
+    for (auto& node : block_einsum->dataflow().nodes()) {
+        if ((libnode_opt = dynamic_cast<data_flow::LibraryNode*>(&node))) break;
+    }
+    ASSERT_TRUE(libnode_opt);
+    auto* einsum_node_opt = dynamic_cast<einsum::EinsumNode*>(libnode_opt);
+    ASSERT_TRUE(einsum_node_opt);
+    EXPECT_EQ(einsum_node_opt->outputs(), std::vector<std::string>({"_out"}));
+    EXPECT_EQ(einsum_node_opt->inputs(), std::vector<std::string>({"_in0", "_out"}));
+    AT_LEAST(einsum_node_opt->maps().size(), 1);
+    EXPECT_TRUE(symbolic::eq(einsum_node_opt->indvar(0), indvar_i));
+    EXPECT_TRUE(symbolic::eq(einsum_node_opt->num_iteration(0), bound_i));
+    EXPECT_TRUE(subsets_eq(einsum_node_opt->out_indices(), subsets.at("b")));
+    auto conn2cont = get_conn2cont(*block_einsum, *libnode_opt);
+    AT_LEAST(einsum_node_opt->in_indices().size(), 2);
+    EXPECT_TRUE(subsets_eq(einsum_node_opt->in_indices(0), subsets.at(conn2cont.at("_in0"))));
+    EXPECT_TRUE(subsets_eq(einsum_node_opt->in_indices(1), subsets.at(conn2cont.at("_out"))));
 }
 
 TEST(EinsumExpand, DiagonalExtraction_2) {
@@ -352,11 +470,35 @@ TEST(EinsumExpand, DiagonalExtraction_2) {
     EXPECT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
     transformation.apply(builder_opt, analysis_manager);
 
-    auto sdfg_opt = builder_opt.move();
-    codegen::CCodeGenerator generator(*sdfg_opt);
-    EXPECT_TRUE(generator.generate());
-    std::cout << generator.function_definition() << " {" << std::endl
-              << generator.main().str() << "}" << std::endl;
+    auto& root_opt = builder_opt.subject().root();
+    AT_LEAST(root_opt.size(), 2);
+    auto* for_i_opt = dynamic_cast<structured_control_flow::For*>(&root_opt.at(0).first);
+    ASSERT_TRUE(for_i_opt);
+    EXPECT_EQ(for_i_opt, &for_i);
+    AT_LEAST(for_i_opt->root().size(), 1);
+    auto* block_opt = dynamic_cast<structured_control_flow::Block*>(&for_i_opt->root().at(0).first);
+    ASSERT_TRUE(block_opt);
+    EXPECT_EQ(block_opt->dataflow().nodes().size(), 2);
+    auto* block_einsum = dynamic_cast<structured_control_flow::Block*>(&root_opt.at(1).first);
+    ASSERT_TRUE(block_einsum);
+    AT_LEAST(block_einsum->dataflow().nodes().size(), 4);
+    data_flow::LibraryNode* libnode_opt = nullptr;
+    for (auto& node : block_einsum->dataflow().nodes()) {
+        if ((libnode_opt = dynamic_cast<data_flow::LibraryNode*>(&node))) break;
+    }
+    ASSERT_TRUE(libnode_opt);
+    auto* einsum_node_opt = dynamic_cast<einsum::EinsumNode*>(libnode_opt);
+    ASSERT_TRUE(einsum_node_opt);
+    EXPECT_EQ(einsum_node_opt->outputs(), std::vector<std::string>({"_out"}));
+    EXPECT_EQ(einsum_node_opt->inputs(), std::vector<std::string>({"_in0", "_out"}));
+    AT_LEAST(einsum_node_opt->maps().size(), 1);
+    EXPECT_TRUE(symbolic::eq(einsum_node_opt->indvar(0), indvar_i));
+    EXPECT_TRUE(symbolic::eq(einsum_node_opt->num_iteration(0), bound_i));
+    EXPECT_TRUE(subsets_eq(einsum_node_opt->out_indices(), subsets.at("b")));
+    auto conn2cont = get_conn2cont(*block_einsum, *libnode_opt);
+    AT_LEAST(einsum_node_opt->in_indices().size(), 2);
+    EXPECT_TRUE(subsets_eq(einsum_node_opt->in_indices(0), subsets.at(conn2cont.at("_in0"))));
+    EXPECT_TRUE(subsets_eq(einsum_node_opt->in_indices(1), subsets.at(conn2cont.at("_out"))));
 }
 
 TEST(EinsumExpand, DiagonalExtraction_3) {
@@ -403,11 +545,26 @@ TEST(EinsumExpand, DiagonalExtraction_3) {
     EXPECT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
     transformation.apply(builder_opt, analysis_manager);
 
-    auto sdfg_opt = builder_opt.move();
-    codegen::CCodeGenerator generator(*sdfg_opt);
-    EXPECT_TRUE(generator.generate());
-    std::cout << generator.function_definition() << " {" << std::endl
-              << generator.main().str() << "}" << std::endl;
+    auto& root_opt = builder_opt.subject().root();
+    AT_LEAST(root_opt.size(), 1);
+    auto* block_einsum = dynamic_cast<structured_control_flow::Block*>(&root_opt.at(0).first);
+    ASSERT_TRUE(block_einsum);
+    AT_LEAST(block_einsum->dataflow().nodes().size(), 3);
+    data_flow::LibraryNode* libnode_opt = nullptr;
+    for (auto& node : block_einsum->dataflow().nodes()) {
+        if ((libnode_opt = dynamic_cast<data_flow::LibraryNode*>(&node))) break;
+    }
+    ASSERT_TRUE(libnode_opt);
+    auto* einsum_node_opt = dynamic_cast<einsum::EinsumNode*>(libnode_opt);
+    ASSERT_TRUE(einsum_node_opt);
+    EXPECT_EQ(einsum_node_opt->outputs(), std::vector<std::string>({"_out"}));
+    EXPECT_EQ(einsum_node_opt->inputs(), std::vector<std::string>({"_in0"}));
+    AT_LEAST(einsum_node_opt->maps().size(), 1);
+    EXPECT_TRUE(symbolic::eq(einsum_node_opt->indvar(0), indvar_i));
+    EXPECT_TRUE(symbolic::eq(einsum_node_opt->num_iteration(0), bound_i));
+    EXPECT_TRUE(subsets_eq(einsum_node_opt->out_indices(), subsets.at("b")));
+    AT_LEAST(einsum_node_opt->in_indices().size(), 1);
+    EXPECT_TRUE(subsets_eq(einsum_node_opt->in_indices(0), subsets.at("A")));
 }
 
 TEST(EinsumExpand, Means_1) {
@@ -477,11 +634,46 @@ TEST(EinsumExpand, Means_1) {
     EXPECT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
     transformation.apply(builder_opt, analysis_manager);
 
-    auto sdfg_opt = builder_opt.move();
-    codegen::CCodeGenerator generator(*sdfg_opt);
-    EXPECT_TRUE(generator.generate());
-    std::cout << generator.function_definition() << " {" << std::endl
-              << generator.main().str() << "}" << std::endl;
+    auto& root_opt = builder_opt.subject().root();
+    AT_LEAST(root_opt.size(), 3);
+    auto* for_j_opt = dynamic_cast<structured_control_flow::For*>(&root_opt.at(0).first);
+    ASSERT_TRUE(for_j_opt);
+    EXPECT_EQ(for_j_opt, &for_j);
+    AT_LEAST(for_j_opt->root().size(), 1);
+    auto* block1_opt =
+        dynamic_cast<structured_control_flow::Block*>(&for_j_opt->root().at(0).first);
+    ASSERT_TRUE(block1_opt);
+    EXPECT_EQ(block1_opt, &block1);
+    auto* block_einsum = dynamic_cast<structured_control_flow::Block*>(&root_opt.at(1).first);
+    ASSERT_TRUE(block_einsum);
+    AT_LEAST(block_einsum->dataflow().nodes().size(), 4);
+    data_flow::LibraryNode* libnode_opt = nullptr;
+    for (auto& node : block_einsum->dataflow().nodes()) {
+        if ((libnode_opt = dynamic_cast<data_flow::LibraryNode*>(&node))) break;
+    }
+    ASSERT_TRUE(libnode_opt);
+    auto* einsum_node_opt = dynamic_cast<einsum::EinsumNode*>(libnode_opt);
+    ASSERT_TRUE(einsum_node_opt);
+    EXPECT_EQ(einsum_node_opt->outputs(), std::vector<std::string>({"_out"}));
+    EXPECT_EQ(einsum_node_opt->inputs(), std::vector<std::string>({"_in0", "_out"}));
+    AT_LEAST(einsum_node_opt->maps().size(), 2);
+    EXPECT_TRUE(symbolic::eq(einsum_node_opt->indvar(0), indvar_i));
+    EXPECT_TRUE(symbolic::eq(einsum_node_opt->num_iteration(0), bound_i));
+    EXPECT_TRUE(symbolic::eq(einsum_node_opt->indvar(1), indvar_j));
+    EXPECT_TRUE(symbolic::eq(einsum_node_opt->num_iteration(1), bound_j));
+    EXPECT_TRUE(subsets_eq(einsum_node_opt->out_indices(), subsets.at("b")));
+    auto conn2cont = get_conn2cont(*block_einsum, *libnode_opt);
+    AT_LEAST(einsum_node_opt->in_indices().size(), 2);
+    EXPECT_TRUE(subsets_eq(einsum_node_opt->in_indices(0), subsets.at(conn2cont.at("_in0"))));
+    EXPECT_TRUE(subsets_eq(einsum_node_opt->in_indices(1), subsets.at(conn2cont.at("_out"))));
+    auto* for_j_opt2 = dynamic_cast<structured_control_flow::For*>(&root_opt.at(2).first);
+    ASSERT_TRUE(for_j_opt2);
+    EXPECT_NE(for_j_opt2, &for_j);
+    AT_LEAST(for_j_opt2->root().size(), 1);
+    auto* block3_opt =
+        dynamic_cast<structured_control_flow::Block*>(&for_j_opt2->root().at(0).first);
+    ASSERT_TRUE(block3_opt);
+    EXPECT_EQ(block3_opt->dataflow().nodes().size(), 4);
 }
 
 TEST(EinsumExpand, Means_2) {
@@ -545,227 +737,44 @@ TEST(EinsumExpand, Means_2) {
     EXPECT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
     transformation.apply(builder_opt, analysis_manager);
 
-    auto sdfg_opt = builder_opt.move();
-    codegen::CCodeGenerator generator(*sdfg_opt);
-    EXPECT_TRUE(generator.generate());
-    std::cout << generator.function_definition() << " {" << std::endl
-              << generator.main().str() << "}" << std::endl;
-}
-
-TEST(EinsumExpand, TempValueDependency_1) {
-    builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
-
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
-    builder.add_container("i", sym_desc);
-    builder.add_container("I", sym_desc, true);
-
-    types::Scalar base_desc(types::PrimitiveType::Float);
-    types::Pointer desc(base_desc);
-    builder.add_container("a", desc, true);
-    builder.add_container("b", desc, true);
-    builder.add_container("c", desc, true);
-    builder.add_container("tmp", base_desc);
-
-    auto& root = builder.subject().root();
-
-    gen_for(i, I, root);
-
-    const std::unordered_map<std::string, data_flow::Subset> subsets = {
-        {"a", {indvar_i}}, {"b", {indvar_i}}, {"c", {indvar_i}}};
-
-    auto& block1 = builder.add_block(body_i);
-    auto& a = builder.add_access(block1, "a");
-    auto& tmp1 = builder.add_access(block1, "tmp");
-    auto& tasklet1 = builder.add_tasklet(block1, data_flow::TaskletCode::mul, {"_out", base_desc},
-                                         {{"_in", base_desc}, {"2.0", base_desc}});
-    builder.add_memlet(block1, a, "void", tasklet1, "_in", subsets.at("a"));
-    builder.add_memlet(block1, tasklet1, "_out", tmp1, "void", {});
-
-    auto& block2 = builder.add_block(body_i);
-    auto& b = builder.add_access(block2, "b");
-    auto& c = builder.add_access(block2, "c");
-    auto& tmp2 = builder.add_access(block2, "tmp");
-    auto& libnode =
-        builder.add_library_node<einsum::EinsumNode, const std::vector<std::string>&,
-                                 const std::vector<std::string>&,
-                                 std::vector<std::pair<symbolic::Symbol, symbolic::Expression>>,
-                                 data_flow::Subset, std::vector<data_flow::Subset>>(
-            block2, DebugInfo(), {"_out"}, {"_in1", "_in2"}, {}, subsets.at("c"),
-            {subsets.at("b"), {}});
-    builder.add_memlet(block2, b, "void", libnode, "_in1", {});
-    builder.add_memlet(block2, tmp2, "void", libnode, "_in2", {});
-    builder.add_memlet(block2, libnode, "_out", c, "void", {});
-
-    auto* einsum_node = dynamic_cast<einsum::EinsumNode*>(&libnode);
-    EXPECT_TRUE(einsum_node);
-
-    auto sdfg = builder.move();
-
-    builder::StructuredSDFGBuilder builder_opt(sdfg);
-    analysis::AnalysisManager analysis_manager(builder_opt.subject());
-
-    transformations::EinsumExpand transformation(for_i, *einsum_node);
-    EXPECT_FALSE(transformation.can_be_applied(builder_opt, analysis_manager));
-}
-
-TEST(EinsumExpand, TempValueDependency_2) {
-    builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
-
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
-    builder.add_container("i", sym_desc);
-    builder.add_container("I", sym_desc, true);
-
-    types::Scalar base_desc(types::PrimitiveType::Float);
-    types::Pointer desc(base_desc);
-    builder.add_container("a", desc, true);
-    builder.add_container("b", desc, true);
-    builder.add_container("c", desc, true);
-    builder.add_container("tmp", base_desc);
-
-    auto& root = builder.subject().root();
-
-    gen_for(i, I, root);
-
-    const std::unordered_map<std::string, data_flow::Subset> subsets = {
-        {"a", {indvar_i}}, {"b", {indvar_i}}, {"c", {indvar_i}}};
-
-    auto& block1 = builder.add_block(body_i);
-    auto& a = builder.add_access(block1, "a");
-    auto& b = builder.add_access(block1, "b");
-    auto& c = builder.add_access(block1, "c");
-    auto& tmp = builder.add_access(block1, "tmp");
-    auto& tasklet1 = builder.add_tasklet(block1, data_flow::TaskletCode::mul, {"_out", base_desc},
-                                         {{"_in", base_desc}, {"2.0", base_desc}});
-    builder.add_memlet(block1, a, "void", tasklet1, "_in", subsets.at("a"));
-    builder.add_memlet(block1, tasklet1, "_out", tmp, "void", {});
-    auto& libnode =
-        builder.add_library_node<einsum::EinsumNode, const std::vector<std::string>&,
-                                 const std::vector<std::string>&,
-                                 std::vector<std::pair<symbolic::Symbol, symbolic::Expression>>,
-                                 data_flow::Subset, std::vector<data_flow::Subset>>(
-            block1, DebugInfo(), {"_out"}, {"_in1", "_in2"}, {}, subsets.at("c"),
-            {subsets.at("b"), {}});
-    builder.add_memlet(block1, b, "void", libnode, "_in1", {});
-    builder.add_memlet(block1, tmp, "void", libnode, "_in2", {});
-    builder.add_memlet(block1, libnode, "_out", c, "void", {});
-
-    auto* einsum_node = dynamic_cast<einsum::EinsumNode*>(&libnode);
-    EXPECT_TRUE(einsum_node);
-
-    auto sdfg = builder.move();
-
-    builder::StructuredSDFGBuilder builder_opt(sdfg);
-    analysis::AnalysisManager analysis_manager(builder_opt.subject());
-
-    transformations::EinsumExpand transformation(for_i, *einsum_node);
-    EXPECT_FALSE(transformation.can_be_applied(builder_opt, analysis_manager));
-}
-
-TEST(EinsumExpand, TempValueDependency_3) {
-    builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
-
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
-    builder.add_container("i", sym_desc);
-    builder.add_container("I", sym_desc, true);
-
-    types::Scalar base_desc(types::PrimitiveType::Float);
-    types::Pointer desc(base_desc);
-    builder.add_container("a", desc, true);
-    builder.add_container("b", desc, true);
-    builder.add_container("c", desc, true);
-    builder.add_container("tmp", base_desc);
-
-    auto& root = builder.subject().root();
-
-    gen_for(i, I, root);
-
-    const std::unordered_map<std::string, data_flow::Subset> subsets = {
-        {"a", {indvar_i}}, {"b", {indvar_i}}, {"c", {indvar_i}}};
-
-    auto& block1 = builder.add_block(body_i);
-    auto& a = builder.add_access(block1, "a");
-    auto& b = builder.add_access(block1, "b");
-    auto& tmp1 = builder.add_access(block1, "tmp");
-    auto& libnode =
-        builder.add_library_node<einsum::EinsumNode, const std::vector<std::string>&,
-                                 const std::vector<std::string>&,
-                                 std::vector<std::pair<symbolic::Symbol, symbolic::Expression>>,
-                                 data_flow::Subset, std::vector<data_flow::Subset>>(
-            block1, DebugInfo(), {"_out"}, {"_in1", "_in2"}, {}, {},
-            {subsets.at("a"), subsets.at("b")});
-    builder.add_memlet(block1, a, "void", libnode, "_in1", {});
-    builder.add_memlet(block1, b, "void", libnode, "_in2", {});
-    builder.add_memlet(block1, libnode, "_out", tmp1, "void", {});
-
-    auto& block2 = builder.add_block(body_i);
-    auto& c = builder.add_access(block2, "c");
-    auto& tmp2 = builder.add_access(block2, "tmp");
-    auto& tasklet1 = builder.add_tasklet(block2, data_flow::TaskletCode::mul, {"_out", base_desc},
-                                         {{"_in", base_desc}, {"2.0", base_desc}});
-    builder.add_memlet(block2, tmp2, "void", tasklet1, "_in", {});
-    builder.add_memlet(block2, tasklet1, "_out", c, "void", subsets.at("c"));
-
-    auto* einsum_node = dynamic_cast<einsum::EinsumNode*>(&libnode);
-    EXPECT_TRUE(einsum_node);
-
-    auto sdfg = builder.move();
-
-    builder::StructuredSDFGBuilder builder_opt(sdfg);
-    analysis::AnalysisManager analysis_manager(builder_opt.subject());
-
-    transformations::EinsumExpand transformation(for_i, *einsum_node);
-    EXPECT_FALSE(transformation.can_be_applied(builder_opt, analysis_manager));
-}
-
-TEST(EinsumExpand, TempValueDependency_4) {
-    builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
-
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
-    builder.add_container("i", sym_desc);
-    builder.add_container("I", sym_desc, true);
-
-    types::Scalar base_desc(types::PrimitiveType::Float);
-    types::Pointer desc(base_desc);
-    builder.add_container("a", desc, true);
-    builder.add_container("b", desc, true);
-    builder.add_container("c", desc, true);
-    builder.add_container("tmp", base_desc);
-
-    auto& root = builder.subject().root();
-
-    gen_for(i, I, root);
-
-    const std::unordered_map<std::string, data_flow::Subset> subsets = {
-        {"a", {indvar_i}}, {"b", {indvar_i}}, {"c", {indvar_i}}};
-
-    auto& block1 = builder.add_block(body_i);
-    auto& a = builder.add_access(block1, "a");
-    auto& b = builder.add_access(block1, "b");
-    auto& c = builder.add_access(block1, "c");
-    auto& tmp = builder.add_access(block1, "tmp");
-    auto& libnode =
-        builder.add_library_node<einsum::EinsumNode, const std::vector<std::string>&,
-                                 const std::vector<std::string>&,
-                                 std::vector<std::pair<symbolic::Symbol, symbolic::Expression>>,
-                                 data_flow::Subset, std::vector<data_flow::Subset>>(
-            block1, DebugInfo(), {"_out"}, {"_in1", "_in2"}, {}, {},
-            {subsets.at("a"), subsets.at("b")});
-    builder.add_memlet(block1, a, "void", libnode, "_in1", {});
-    builder.add_memlet(block1, b, "void", libnode, "_in2", {});
-    builder.add_memlet(block1, libnode, "_out", tmp, "void", {});
-    auto& tasklet1 = builder.add_tasklet(block1, data_flow::TaskletCode::mul, {"_out", base_desc},
-                                         {{"_in", base_desc}, {"2.0", base_desc}});
-    builder.add_memlet(block1, tmp, "void", tasklet1, "_in", {});
-    builder.add_memlet(block1, tasklet1, "_out", c, "void", subsets.at("c"));
-
-    auto* einsum_node = dynamic_cast<einsum::EinsumNode*>(&libnode);
-    EXPECT_TRUE(einsum_node);
-
-    auto sdfg = builder.move();
-
-    builder::StructuredSDFGBuilder builder_opt(sdfg);
-    analysis::AnalysisManager analysis_manager(builder_opt.subject());
-
-    transformations::EinsumExpand transformation(for_i, *einsum_node);
-    EXPECT_FALSE(transformation.can_be_applied(builder_opt, analysis_manager));
+    auto& root_opt = builder_opt.subject().root();
+    AT_LEAST(root_opt.size(), 3);
+    auto* for_j_opt = dynamic_cast<structured_control_flow::For*>(&root_opt.at(0).first);
+    ASSERT_TRUE(for_j_opt);
+    EXPECT_EQ(for_j_opt, &for_j);
+    AT_LEAST(for_j_opt->root().size(), 1);
+    auto* block1_opt =
+        dynamic_cast<structured_control_flow::Block*>(&for_j_opt->root().at(0).first);
+    ASSERT_TRUE(block1_opt);
+    EXPECT_EQ(block1_opt->dataflow().nodes().size(), 2);
+    auto* block_einsum = dynamic_cast<structured_control_flow::Block*>(&root_opt.at(1).first);
+    ASSERT_TRUE(block_einsum);
+    AT_LEAST(block_einsum->dataflow().nodes().size(), 4);
+    data_flow::LibraryNode* libnode_opt = nullptr;
+    for (auto& node : block_einsum->dataflow().nodes()) {
+        if ((libnode_opt = dynamic_cast<data_flow::LibraryNode*>(&node))) break;
+    }
+    ASSERT_TRUE(libnode_opt);
+    auto* einsum_node_opt = dynamic_cast<einsum::EinsumNode*>(libnode_opt);
+    ASSERT_TRUE(einsum_node_opt);
+    EXPECT_EQ(einsum_node_opt->outputs(), std::vector<std::string>({"_out"}));
+    EXPECT_EQ(einsum_node_opt->inputs(), std::vector<std::string>({"_in0", "_out"}));
+    AT_LEAST(einsum_node_opt->maps().size(), 2);
+    EXPECT_TRUE(symbolic::eq(einsum_node_opt->indvar(0), indvar_i));
+    EXPECT_TRUE(symbolic::eq(einsum_node_opt->num_iteration(0), bound_i));
+    EXPECT_TRUE(symbolic::eq(einsum_node_opt->indvar(1), indvar_j));
+    EXPECT_TRUE(symbolic::eq(einsum_node_opt->num_iteration(1), bound_j));
+    EXPECT_TRUE(subsets_eq(einsum_node_opt->out_indices(), subsets.at("b")));
+    auto conn2cont = get_conn2cont(*block_einsum, *libnode_opt);
+    AT_LEAST(einsum_node_opt->in_indices().size(), 2);
+    EXPECT_TRUE(subsets_eq(einsum_node_opt->in_indices(0), subsets.at(conn2cont.at("_in0"))));
+    EXPECT_TRUE(subsets_eq(einsum_node_opt->in_indices(1), subsets.at(conn2cont.at("_out"))));
+    auto* for_j_opt2 = dynamic_cast<structured_control_flow::For*>(&root_opt.at(2).first);
+    ASSERT_TRUE(for_j_opt2);
+    EXPECT_NE(for_j_opt2, &for_j);
+    AT_LEAST(for_j_opt2->root().size(), 1);
+    auto* block3_opt =
+        dynamic_cast<structured_control_flow::Block*>(&for_j_opt2->root().at(0).first);
+    ASSERT_TRUE(block3_opt);
+    EXPECT_EQ(block3_opt->dataflow().nodes().size(), 4);
 }
