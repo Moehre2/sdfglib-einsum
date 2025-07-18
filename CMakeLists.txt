@@ -12,11 +12,12 @@ if(NOT TARGET sdfglib::sdfglib)
 endif()
 
 set(SOURCE_FILES
-    src/blas/blas_dispatcher.cpp
+    src/blas/blas_dispatcher_gemm.cpp
+    src/blas/blas_node_gemm.cpp
     src/blas/blas_node.cpp
+    src/einsum/einsum_dispatcher.cpp
     src/einsum/einsum_node.cpp
     src/einsum/einsum_serializer.cpp
-    src/einsum/einsum_dispatcher.cpp
     src/transformations/einsum_expand.cpp
     src/transformations/einsum_lift.cpp
     src/transformations/einsum2blas.cpp

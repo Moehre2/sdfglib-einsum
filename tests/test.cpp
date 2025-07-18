@@ -8,6 +8,6 @@ int main(int argc, char **argv) {
     testing::InitGoogleTest(&argc, argv);
     sdfg::codegen::register_default_dispatchers();
     sdfg::einsum::register_einsum_dispatcher();
-    sdfg::blas::register_blas_dispatcher();
+    sdfg::blas::register_blas_dispatchers();
     return RUN_ALL_TESTS();
 }

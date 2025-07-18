@@ -14,6 +14,7 @@
 #include <unordered_map>
 
 #include "sdfg/blas/blas_node.h"
+#include "sdfg/blas/blas_node_gemm.h"
 #include "sdfg/einsum/einsum_node.h"
 
 namespace sdfg {
@@ -104,11 +105,12 @@ void Einsum2BLAS::apply(builder::StructuredSDFGBuilder& builder,
         dynamic_cast<structured_control_flow::Block*>(this->einsum_node_.get_parent().get_parent());
 
     // Add the BLAS node
-    auto& libnode = builder.add_library_node<blas::BLASNode, const std::vector<std::string>&,
-                                             const std::vector<std::string>&, symbolic::Expression,
-                                             symbolic::Expression, symbolic::Expression>(
-        *block, DebugInfo(), this->einsum_node_.outputs(), this->einsum_node_.inputs(), bound_i,
-        bound_j, bound_k);
+    auto& libnode =
+        builder.add_library_node<blas::BLASNodeGemm, const std::vector<std::string>&,
+                                 const std::vector<std::string>&, const blas::BLASType,
+                                 symbolic::Expression, symbolic::Expression, symbolic::Expression>(
+            *block, DebugInfo(), this->einsum_node_.outputs(), this->einsum_node_.inputs(),
+            blas::BLASType_real, bound_i, bound_j, bound_k);
 
     // Copy the memlets
     for (auto& iedge : block->dataflow().in_edges(this->einsum_node_)) {
