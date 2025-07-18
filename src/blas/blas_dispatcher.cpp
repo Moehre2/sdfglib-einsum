@@ -1,6 +1,6 @@
 #include "sdfg/blas/blas_dispatcher.h"
 
-#include <sdfg/codegen/dispatchers/library_nodes/library_node_dispatcher.h>
+#include <sdfg/codegen/dispatchers/node_dispatcher_registry.h>
 #include <sdfg/codegen/language_extension.h>
 #include <sdfg/codegen/utils.h>
 #include <sdfg/data_flow/access_node.h>

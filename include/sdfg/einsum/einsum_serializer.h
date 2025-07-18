@@ -1,7 +1,6 @@
 #pragma once
 
 #include <sdfg/serializer/json_serializer.h>
-#include <sdfg/serializer/library_node_serializer_registry.h>
 #include <sdfg/symbolic/symbolic.h>
 
 #include <string>
