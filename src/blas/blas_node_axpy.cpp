@@ -20,33 +20,25 @@ namespace blas {
 
 BLASNodeAxpy::BLASNodeAxpy(size_t element_id, const DebugInfo& debug_info,
                            const graph::Vertex vertex, data_flow::DataFlowGraph& parent,
-                           const std::vector<std::string>& outputs,
-                           const std::vector<std::string>& inputs, const BLASType type,
-                           symbolic::Expression n)
-    : BLASNode(element_id, debug_info, vertex, parent, LibraryNodeType_BLAS_axpy, outputs, inputs,
-               type),
-      n_(n) {
-    if (inputs.size() != 3) {
-        throw InvalidSDFGException("BLAS axpy can only have exactly three inputs");
-    }
-
-    if (inputs[2] != outputs[0]) {
-        throw InvalidSDFGException("BLAS axpy 3rd input does not match output");
-    }
-}
+                           const BLASType type, symbolic::Expression n, std::string alpha,
+                           std::string x, std::string y)
+    : BLASNode(element_id, debug_info, vertex, parent, LibraryNodeType_BLAS_axpy, {y},
+               {alpha, x, y}, type),
+      n_(n) {}
 
 symbolic::Expression BLASNodeAxpy::n() const { return this->n_; }
 
-std::string BLASNodeAxpy::alpha() const { return this->inputs_[0]; }
+std::string BLASNodeAxpy::alpha() const { return this->input(0); }
 
-std::string BLASNodeAxpy::x() const { return this->inputs_[1]; }
+std::string BLASNodeAxpy::x() const { return this->input(1); }
 
-std::string BLASNodeAxpy::y() const { return this->inputs_[2]; }
+std::string BLASNodeAxpy::y() const { return this->input(2); }
 
 std::unique_ptr<data_flow::DataFlowNode> BLASNodeAxpy::clone(
     size_t element_id, const graph::Vertex vertex, data_flow::DataFlowGraph& parent) const {
     return std::make_unique<BLASNodeAxpy>(element_id, this->debug_info(), vertex, parent,
-                                          this->outputs(), this->inputs(), this->type(), this->n());
+                                          this->type(), this->n(), this->alpha(), this->x(),
+                                          this->y());
 }
 
 std::string BLASNodeAxpy::toStr() const {

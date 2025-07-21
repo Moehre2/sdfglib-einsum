@@ -9,7 +9,6 @@
 
 #include <memory>
 #include <string>
-#include <vector>
 
 #include "sdfg/blas/blas_node.h"
 
@@ -23,9 +22,8 @@ class BLASNodeAxpy : public BLASNode {
 
    public:
     BLASNodeAxpy(size_t element_id, const DebugInfo& debug_info, const graph::Vertex vertex,
-                 data_flow::DataFlowGraph& parent, const std::vector<std::string>& outputs,
-                 const std::vector<std::string>& inputs, const BLASType type,
-                 symbolic::Expression n);
+                 data_flow::DataFlowGraph& parent, const BLASType type, symbolic::Expression n,
+                 std::string alpha, std::string x, std::string y);
 
     BLASNodeAxpy(const BLASNodeAxpy&) = delete;
     BLASNodeAxpy& operator=(const BLASNodeAxpy&) = delete;

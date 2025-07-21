@@ -10,7 +10,6 @@
 #include <sdfg/types/type.h>
 
 #include <string>
-#include <vector>
 
 #include "sdfg/blas/blas_node.h"
 
@@ -35,11 +34,10 @@ TEST(BLASNodeAxpy, saxpy) {
     auto& x = builder.add_access(block, "x");
     auto& y1 = builder.add_access(block, "y");
     auto& y2 = builder.add_access(block, "y");
-    auto& libnode = builder.add_library_node<blas::BLASNodeAxpy, const std::vector<std::string>&,
-                                             const std::vector<std::string>&, const blas::BLASType,
-                                             symbolic::Expression>(
-        block, DebugInfo(), {"_y"}, {"_alpha", "_x", "_y"}, blas::BLASType_real,
-        symbolic::symbol("n"));
+    auto& libnode =
+        builder.add_library_node<blas::BLASNodeAxpy, const blas::BLASType, symbolic::Expression,
+                                 std::string, std::string, std::string>(
+            block, DebugInfo(), blas::BLASType_real, symbolic::symbol("n"), "_alpha", "_x", "_y");
     builder.add_memlet(block, alpha, "void", libnode, "_alpha", {});
     builder.add_memlet(block, x, "void", libnode, "_x", {});
     builder.add_memlet(block, y1, "void", libnode, "_y", {});
@@ -70,11 +68,10 @@ TEST(BLASNodeAxpy, daxpy) {
     auto& x = builder.add_access(block, "x");
     auto& y1 = builder.add_access(block, "y");
     auto& y2 = builder.add_access(block, "y");
-    auto& libnode = builder.add_library_node<blas::BLASNodeAxpy, const std::vector<std::string>&,
-                                             const std::vector<std::string>&, const blas::BLASType,
-                                             symbolic::Expression>(
-        block, DebugInfo(), {"_y"}, {"_alpha", "_x", "_y"}, blas::BLASType_double,
-        symbolic::symbol("n"));
+    auto& libnode =
+        builder.add_library_node<blas::BLASNodeAxpy, const blas::BLASType, symbolic::Expression,
+                                 std::string, std::string, std::string>(
+            block, DebugInfo(), blas::BLASType_double, symbolic::symbol("n"), "_alpha", "_x", "_y");
     builder.add_memlet(block, alpha, "void", libnode, "_alpha", {});
     builder.add_memlet(block, x, "void", libnode, "_x", {});
     builder.add_memlet(block, y1, "void", libnode, "_y", {});

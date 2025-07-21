@@ -120,36 +120,28 @@ void Einsum2BLASAxpy::apply(builder::StructuredSDFGBuilder& builder,
     data_flow::LibraryNode* libnode = nullptr;
     if (this->einsum_node_.inputs().size() == 2) {
         // Inputs: x, y
-        std::vector<std::string> inputs;
-        if (type == blas::BLASType_real)
-            inputs.push_back("1.0f");
-        else
-            inputs.push_back("1.0");
-        inputs.push_back(this->einsum_node_.input(0));
-        inputs.push_back(this->einsum_node_.input(1));
-        libnode = &builder.add_library_node<blas::BLASNodeAxpy, const std::vector<std::string>&,
-                                            const std::vector<std::string>&, const blas::BLASType,
-                                            symbolic::Expression>(
-            *block, this->einsum_node_.debug_info(), this->einsum_node_.outputs(), inputs, type,
-            num_iteration);
+        std::string alpha = (type == blas::BLASType_real) ? "1.0f" : "1.0";
+        libnode =
+            &builder.add_library_node<blas::BLASNodeAxpy, const blas::BLASType,
+                                      symbolic::Expression, std::string, std::string, std::string>(
+                *block, this->einsum_node_.debug_info(), type, num_iteration, alpha,
+                this->einsum_node_.input(0), this->einsum_node_.input(1));
     } else if (this->einsum_node_.in_indices(0).size() == 1) {
         // Inputs: x, alpha, y
-        std::vector<std::string> inputs;
-        inputs.push_back(this->einsum_node_.input(1));
-        inputs.push_back(this->einsum_node_.input(0));
-        inputs.push_back(this->einsum_node_.input(2));
-        libnode = &builder.add_library_node<blas::BLASNodeAxpy, const std::vector<std::string>&,
-                                            const std::vector<std::string>&, const blas::BLASType,
-                                            symbolic::Expression>(
-            *block, this->einsum_node_.debug_info(), this->einsum_node_.outputs(), inputs, type,
-            num_iteration);
+        libnode =
+            &builder.add_library_node<blas::BLASNodeAxpy, const blas::BLASType,
+                                      symbolic::Expression, std::string, std::string, std::string>(
+                *block, this->einsum_node_.debug_info(), type, num_iteration,
+                this->einsum_node_.input(1), this->einsum_node_.input(0),
+                this->einsum_node_.input(2));
     } else {
         // Inputs: alpha, x, y
-        libnode = &builder.add_library_node<blas::BLASNodeAxpy, const std::vector<std::string>&,
-                                            const std::vector<std::string>&, const blas::BLASType,
-                                            symbolic::Expression>(
-            *block, this->einsum_node_.debug_info(), this->einsum_node_.outputs(),
-            this->einsum_node_.inputs(), type, num_iteration);
+        libnode =
+            &builder.add_library_node<blas::BLASNodeAxpy, const blas::BLASType,
+                                      symbolic::Expression, std::string, std::string, std::string>(
+                *block, this->einsum_node_.debug_info(), type, num_iteration,
+                this->einsum_node_.input(0), this->einsum_node_.input(1),
+                this->einsum_node_.input(2));
     }
 
     // Copy the memlets
