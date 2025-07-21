@@ -71,6 +71,7 @@ TEST(Einsum2BLASAxpy, saxpy_1) {
     AT_LEAST(root_opt.size(), 1);
     auto* block_opt = dynamic_cast<structured_control_flow::Block*>(&root_opt.at(0).first);
     ASSERT_TRUE(block_opt);
+    EXPECT_EQ(block_opt, &block);
     AT_LEAST(block_opt->dataflow().nodes().size(), 4);
     data_flow::LibraryNode* libnode_opt = nullptr;
     for (auto& node : block_opt->dataflow().nodes()) {
@@ -136,6 +137,7 @@ TEST(Einsum2BLASAxpy, saxpy_2) {
     AT_LEAST(root_opt.size(), 1);
     auto* block_opt = dynamic_cast<structured_control_flow::Block*>(&root_opt.at(0).first);
     ASSERT_TRUE(block_opt);
+    EXPECT_EQ(block_opt, &block);
     AT_LEAST(block_opt->dataflow().nodes().size(), 5);
     data_flow::LibraryNode* libnode_opt = nullptr;
     for (auto& node : block_opt->dataflow().nodes()) {
@@ -201,6 +203,7 @@ TEST(Einsum2BLASAxpy, saxpy_3) {
     AT_LEAST(root_opt.size(), 1);
     auto* block_opt = dynamic_cast<structured_control_flow::Block*>(&root_opt.at(0).first);
     ASSERT_TRUE(block_opt);
+    EXPECT_EQ(block_opt, &block);
     AT_LEAST(block_opt->dataflow().nodes().size(), 5);
     data_flow::LibraryNode* libnode_opt = nullptr;
     for (auto& node : block_opt->dataflow().nodes()) {
@@ -263,6 +266,7 @@ TEST(Einsum2BLASAxpy, daxpy_1) {
     AT_LEAST(root_opt.size(), 1);
     auto* block_opt = dynamic_cast<structured_control_flow::Block*>(&root_opt.at(0).first);
     ASSERT_TRUE(block_opt);
+    EXPECT_EQ(block_opt, &block);
     AT_LEAST(block_opt->dataflow().nodes().size(), 4);
     data_flow::LibraryNode* libnode_opt = nullptr;
     for (auto& node : block_opt->dataflow().nodes()) {
@@ -328,6 +332,7 @@ TEST(Einsum2BLASAxpy, daxpy_2) {
     AT_LEAST(root_opt.size(), 1);
     auto* block_opt = dynamic_cast<structured_control_flow::Block*>(&root_opt.at(0).first);
     ASSERT_TRUE(block_opt);
+    EXPECT_EQ(block_opt, &block);
     AT_LEAST(block_opt->dataflow().nodes().size(), 5);
     data_flow::LibraryNode* libnode_opt = nullptr;
     for (auto& node : block_opt->dataflow().nodes()) {
@@ -393,6 +398,7 @@ TEST(Einsum2BLASAxpy, daxpy_3) {
     AT_LEAST(root_opt.size(), 1);
     auto* block_opt = dynamic_cast<structured_control_flow::Block*>(&root_opt.at(0).first);
     ASSERT_TRUE(block_opt);
+    EXPECT_EQ(block_opt, &block);
     AT_LEAST(block_opt->dataflow().nodes().size(), 5);
     data_flow::LibraryNode* libnode_opt = nullptr;
     for (auto& node : block_opt->dataflow().nodes()) {

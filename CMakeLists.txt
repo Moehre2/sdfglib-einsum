@@ -14,8 +14,10 @@ endif()
 set(SOURCE_FILES
     src/blas/blas_dispatcher_axpy.cpp
     src/blas/blas_dispatcher_gemm.cpp
+    src/blas/blas_dispatcher_scal.cpp
     src/blas/blas_node_axpy.cpp
     src/blas/blas_node_gemm.cpp
+    src/blas/blas_node_scal.cpp
     src/blas/blas_node.cpp
     src/einsum/einsum_dispatcher.cpp
     src/einsum/einsum_node.cpp
@@ -23,6 +25,7 @@ set(SOURCE_FILES
     src/transformations/einsum_expand.cpp
     src/transformations/einsum_lift.cpp
     src/transformations/einsum2blas_axpy.cpp
+    src/transformations/einsum2blas_scal.cpp
     src/transformations/einsum2blas.cpp
 )
 
