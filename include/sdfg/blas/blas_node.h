@@ -42,6 +42,8 @@ class BLASNode : public data_flow::LibraryNode {
 
     virtual symbolic::SymbolSet symbols() const override;
 
+    virtual void validate() const override;
+
     virtual void replace(const symbolic::Expression& old_expression,
                          const symbolic::Expression& new_expression) override;
 };

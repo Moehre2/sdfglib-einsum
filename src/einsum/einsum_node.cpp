@@ -123,6 +123,10 @@ symbolic::SymbolSet EinsumNode::symbols() const {
     return {};
 }
 
+void EinsumNode::validate() const {
+    // TODO: Implement
+}
+
 void EinsumNode::replace(const symbolic::Expression& old_expression,
                          const symbolic::Expression& new_expression) {
     // Do nothing

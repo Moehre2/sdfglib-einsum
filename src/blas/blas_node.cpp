@@ -29,6 +29,10 @@ BLASType BLASNode::type() const { return this->type_; }
 
 symbolic::SymbolSet BLASNode::symbols() const { return {}; }
 
+void BLASNode::validate() const {
+    // TODO: Implement
+}
+
 void BLASNode::replace(const symbolic::Expression& old_expression,
                        const symbolic::Expression& new_expression) {
     // Do nothing
