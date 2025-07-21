@@ -46,7 +46,7 @@ TEST(BLASNodeAxpy, saxpy) {
     auto* blas_node = dynamic_cast<blas::BLASNodeAxpy*>(&libnode);
     ASSERT_TRUE(blas_node);
 
-    EXPECT_EQ(blas_node->toStr(), "_y = saxpy(n, _alpha, _x, 1, _y, 1)");
+    EXPECT_EQ(blas_node->toStr(), "saxpy(n, _alpha, _x, 1, _y, 1)");
 }
 
 TEST(BLASNodeAxpy, daxpy) {
@@ -80,5 +80,5 @@ TEST(BLASNodeAxpy, daxpy) {
     auto* blas_node = dynamic_cast<blas::BLASNodeAxpy*>(&libnode);
     ASSERT_TRUE(blas_node);
 
-    EXPECT_EQ(blas_node->toStr(), "_y = daxpy(n, _alpha, _x, 1, _y, 1)");
+    EXPECT_EQ(blas_node->toStr(), "daxpy(n, _alpha, _x, 1, _y, 1)");
 }

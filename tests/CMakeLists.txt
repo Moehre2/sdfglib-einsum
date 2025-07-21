@@ -8,9 +8,11 @@ FetchContent_MakeAvailable(googletest)
 
 set(TEST_FILES
     blas/blas_dispatcher_axpy_test.cpp
+    blas/blas_dispatcher_copy_test.cpp
     blas/blas_dispatcher_scal_test.cpp
     blas/blas_dispatcher_test.cpp
     blas/blas_node_axpy_test.cpp
+    blas/blas_node_copy_test.cpp
     blas/blas_node_scal_test.cpp
     einsum/einsum_dispatcher_test.cpp
     einsum/einsum_node_test.cpp
@@ -19,6 +21,7 @@ set(TEST_FILES
     transformations/einsum_lift_fail_test.cpp
     transformations/einsum_lift_test.cpp
     transformations/einsum2blas_axpy_test.cpp
+    transformations/einsum2blas_copy_test.cpp
     transformations/einsum2blas_scal_test.cpp
     transformations/einsum2blas_test.cpp
     test.cpp

@@ -41,8 +41,8 @@ std::unique_ptr<data_flow::DataFlowNode> BLASNodeScal::clone(
 std::string BLASNodeScal::toStr() const {
     std::stringstream stream;
 
-    stream << this->output(0) << " = " << blasType2String(this->type()) << "scal("
-           << this->n()->__str__() << ", " << this->alpha() << ", " << this->x() << ", 1)";
+    stream << blasType2String(this->type()) << "scal(" << this->n()->__str__() << ", "
+           << this->alpha() << ", " << this->x() << ", 1)";
 
     return stream.str();
 }

@@ -42,7 +42,7 @@ TEST(BLASNodeScal, sscal) {
     auto* blas_node = dynamic_cast<blas::BLASNodeScal*>(&libnode);
     ASSERT_TRUE(blas_node);
 
-    EXPECT_EQ(blas_node->toStr(), "_x = sscal(n, _alpha, _x, 1)");
+    EXPECT_EQ(blas_node->toStr(), "sscal(n, _alpha, _x, 1)");
 }
 
 TEST(BLASNodeScal, dscal) {
@@ -72,5 +72,5 @@ TEST(BLASNodeScal, dscal) {
     auto* blas_node = dynamic_cast<blas::BLASNodeScal*>(&libnode);
     ASSERT_TRUE(blas_node);
 
-    EXPECT_EQ(blas_node->toStr(), "_x = dscal(n, _alpha, _x, 1)");
+    EXPECT_EQ(blas_node->toStr(), "dscal(n, _alpha, _x, 1)");
 }
