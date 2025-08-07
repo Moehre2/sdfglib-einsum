@@ -41,8 +41,9 @@ jobs:
       - name: Build sdfglib
         run: |
           git config --global url."https://oauth2:${{ secrets.SDFGLIB_TOKEN }}@github.com/".insteadOf "git@github.com:"
-          git clone --depth 1 "https://oauth2:${{ secrets.SDFGLIB_TOKEN }}@github.com/daisytuner/sdfglib.git" /tmp/sdfglib
+          git clone "https://oauth2:${{ secrets.SDFGLIB_TOKEN }}@github.com/daisytuner/sdfglib.git" /tmp/sdfglib
           cd /tmp/sdfglib
+          git checkout abe57c08381461b6689cc215a9305e21c2b65642
           git submodule update --init --recursive --depth 1
           git lfs fetch
 
