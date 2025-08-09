@@ -43,7 +43,7 @@ jobs:
           git config --global url."https://oauth2:${{ secrets.SDFGLIB_TOKEN }}@github.com/".insteadOf "git@github.com:"
           git clone "https://oauth2:${{ secrets.SDFGLIB_TOKEN }}@github.com/daisytuner/sdfglib.git" /tmp/sdfglib
           cd /tmp/sdfglib
-          git checkout abe57c08381461b6689cc215a9305e21c2b65642
+          git checkout d1eec4e04da95b10bf9f43fc2ae486ee5294162d
           git submodule update --init --recursive --depth 1
           git lfs fetch
 
