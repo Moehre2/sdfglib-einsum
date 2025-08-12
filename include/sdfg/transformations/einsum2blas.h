@@ -8,15 +8,23 @@
 #include <string>
 
 #include "sdfg/einsum/einsum_node.h"
+#include "sdfg/transformations/einsum2blas_axpy.h"
+#include "sdfg/transformations/einsum2blas_copy.h"
+#include "sdfg/transformations/einsum2blas_dot.h"
+#include "sdfg/transformations/einsum2blas_scal.h"
 
 namespace sdfg {
 namespace transformations {
 
-class Einsum2BLASGemm : public Transformation {
+class Einsum2BLAS : public Transformation {
     einsum::EinsumNode& einsum_node_;
+    Einsum2BLASAxpy axpy_;
+    Einsum2BLASScal scal_;
+    Einsum2BLASCopy copy_;
+    Einsum2BLASDot dot_;
 
    public:
-    Einsum2BLASGemm(einsum::EinsumNode& einsum_node);
+    Einsum2BLAS(einsum::EinsumNode& einsum_node);
 
     virtual std::string name() const override;
 
@@ -28,8 +36,7 @@ class Einsum2BLASGemm : public Transformation {
 
     virtual void to_json(nlohmann::json& j) const override;
 
-    static Einsum2BLASGemm from_json(builder::StructuredSDFGBuilder& builder,
-                                     const nlohmann::json& j);
+    static Einsum2BLAS from_json(builder::StructuredSDFGBuilder& builder, const nlohmann::json& j);
 };
 
 }  // namespace transformations

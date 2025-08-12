@@ -25,7 +25,7 @@ Einsum2BLASGemm::Einsum2BLASGemm(einsum::EinsumNode& einsum_node) : einsum_node_
 std::string Einsum2BLASGemm::name() const { return "Einsum2BLASGemm"; }
 
 bool Einsum2BLASGemm::can_be_applied(builder::StructuredSDFGBuilder& builder,
-                                 analysis::AnalysisManager& analysis_manager) {
+                                     analysis::AnalysisManager& analysis_manager) {
     // Check inputs
     if (this->einsum_node_.inputs().size() != 3) return false;
     if (this->einsum_node_.input(2) != this->einsum_node_.output(0)) return false;
@@ -73,7 +73,7 @@ bool Einsum2BLASGemm::can_be_applied(builder::StructuredSDFGBuilder& builder,
 }
 
 void Einsum2BLASGemm::apply(builder::StructuredSDFGBuilder& builder,
-                        analysis::AnalysisManager& analysis_manager) {
+                            analysis::AnalysisManager& analysis_manager) {
     // Map map indices to map bounds
     std::unordered_map<std::string, symbolic::Expression> maps;
     for (auto& map : this->einsum_node_.maps()) maps.insert({map.first->__str__(), map.second});
@@ -144,7 +144,7 @@ void Einsum2BLASGemm::to_json(nlohmann::json& j) const {
 }
 
 Einsum2BLASGemm Einsum2BLASGemm::from_json(builder::StructuredSDFGBuilder& builder,
-                                   const nlohmann::json& j) {
+                                           const nlohmann::json& j) {
     size_t einsum_node_id = j["einsum_node_element_id"].get<size_t>();
     auto einsum_node_element = builder.find_element_by_id(einsum_node_id);
     if (!einsum_node_element) {
