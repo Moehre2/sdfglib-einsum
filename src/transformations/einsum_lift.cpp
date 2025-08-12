@@ -20,6 +20,7 @@
 #include <nlohmann/json_fwd.hpp>
 #include <sstream>
 #include <string>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -305,6 +306,7 @@ void EinsumLift::apply(builder::StructuredSDFGBuilder& builder,
 
     // Capture all supported calculations from all tasklets in comp block
     std::vector<std::string> outputs, inputs;
+    std::unordered_set<std::string> input_conns;
     std::vector<data_flow::Subset> out_indicess, in_indices;
     auto& comp_dfg = this->comp_block_.dataflow();
     std::vector<std::pair<symbolic::Symbol, symbolic::Expression>> comps, comps_static_assign;
@@ -317,10 +319,12 @@ void EinsumLift::apply(builder::StructuredSDFGBuilder& builder,
         out_indicess.push_back(oedge.subset());
         std::unordered_map<std::string, symbolic::Expression> input_map;
         for (auto& iedge : comp_dfg.in_edges(*tasklet)) {
-            std::string in_cont = dynamic_cast<const data_flow::AccessNode&>(iedge.src()).data();
+            const std::string in_cont =
+                dynamic_cast<const data_flow::AccessNode&>(iedge.src()).data();
             input_map.insert({iedge.dst_conn(),
                               symbolic::symbol(this->createAccessExpr(in_cont, iedge.subset()))});
             inputs.push_back(in_cont);
+            input_conns.insert(in_cont);
             in_indices.push_back(iedge.subset());
         }
         std::vector<symbolic::Expression> comp_ins;
@@ -425,11 +429,18 @@ void EinsumLift::apply(builder::StructuredSDFGBuilder& builder,
     // Add access nodes
     data_flow::AccessNode& out_access = builder.add_access(block, output);
     std::vector<std::reference_wrapper<data_flow::AccessNode>> in_access;
-    for (auto& input : inputs) in_access.push_back(builder.add_access(block, input));
+    for (auto& input : inputs) {
+        if (input_conns.contains(input)) in_access.push_back(builder.add_access(block, input));
+    }
 
     // Create connectors
     std::vector<std::string> in_conns;
-    for (size_t i = 0; i < inputs.size(); ++i) in_conns.push_back("_in" + std::to_string(i));
+    for (size_t i = 0; i < inputs.size(); ++i) {
+        if (input_conns.contains(inputs[i]))
+            in_conns.push_back("_in" + std::to_string(i));
+        else
+            in_conns.push_back(inputs[i]);
+    }
     if (out_in_scomp) in_conns[inputs.size() - 1] = "_out";
 
     // Add einsum node as library node
@@ -442,8 +453,10 @@ void EinsumLift::apply(builder::StructuredSDFGBuilder& builder,
 
     // Add memlets
     builder.add_memlet(block, libnode, "_out", out_access, "void", {});
-    for (size_t i = 0; i < inputs.size(); ++i)
-        builder.add_memlet(block, in_access[i], "void", libnode, in_conns[i], {});
+    for (size_t i = 0; i < inputs.size(); ++i) {
+        if (input_conns.contains(inputs[i]))
+            builder.add_memlet(block, in_access[i], "void", libnode, in_conns[i], {});
+    }
 }
 
 void EinsumLift::to_json(nlohmann::json& j) const {

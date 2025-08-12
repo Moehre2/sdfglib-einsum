@@ -132,7 +132,8 @@ void EinsumDispatcher::dispatch(codegen::PrettyPrinter& stream) {
             stream << this->language_extension_.subset(
                 this->function_, src_types.at(einsum_node->input(i)), einsum_node->in_indices(i));
         } else {
-            if (dynamic_cast<const types::Pointer*>(&src_types.at(einsum_node->input(i))))
+            if (src_types.contains(einsum_node->input(i)) &&
+                dynamic_cast<const types::Pointer*>(&src_types.at(einsum_node->input(i))))
                 stream << "*";
             stream << einsum_node->input(i);
         }
