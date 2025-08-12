@@ -16,7 +16,6 @@
 #include <sdfg/transformations/transformation.h>
 #include <symengine/basic.h>
 
-#include <functional>
 #include <nlohmann/json_fwd.hpp>
 #include <set>
 #include <string>
@@ -159,6 +158,7 @@ bool EinsumExpand::can_be_applied(builder::StructuredSDFGBuilder& builder,
     // Check for every input container of the einsum node: If it is write accessed inside the loop
     // before the einsum node, the loop index variable has to be in the input indices
     for (size_t i = 0; i < this->einsum_node_.inputs().size(); ++i) {
+        if (!in_containers.contains(this->einsum_node_.input(i))) continue;
         for (auto* user : users.uses(in_containers.at(this->einsum_node_.input(i)))) {
             if (user && user->use() == analysis::Use::WRITE && user->element() &&
                 elements_before_einsum.contains(user->element()->element_id()) &&
@@ -224,14 +224,18 @@ void EinsumExpand::apply(builder::StructuredSDFGBuilder& builder,
     auto& new_block_einsum = builder.add_block_after(parent, this->loop_).first;
 
     // Copy the access to the einsum node from the old block to the new one
-    std::vector<std::reference_wrapper<data_flow::AccessNode>> out_access, in_access;
+    std::unordered_map<std::string, data_flow::AccessNode&> out_access, in_access;
     for (auto& oedge : block_einsum->dataflow().out_edges(this->einsum_node_)) {
-        out_access.push_back(builder.add_access(
-            new_block_einsum, dynamic_cast<const data_flow::AccessNode&>(oedge.dst()).data()));
+        out_access.insert(
+            {oedge.src_conn(),
+             builder.add_access(new_block_einsum,
+                                dynamic_cast<const data_flow::AccessNode&>(oedge.dst()).data())});
     }
     for (auto& iedge : block_einsum->dataflow().in_edges(this->einsum_node_)) {
-        in_access.push_back(builder.add_access(
-            new_block_einsum, dynamic_cast<const data_flow::AccessNode&>(iedge.src()).data()));
+        in_access.insert(
+            {iedge.dst_conn(),
+             builder.add_access(new_block_einsum,
+                                dynamic_cast<const data_flow::AccessNode&>(iedge.src()).data())});
     }
 
     // Add the expanded einsum node to the new block after the loop
@@ -247,12 +251,16 @@ void EinsumExpand::apply(builder::StructuredSDFGBuilder& builder,
             this->einsum_node_.in_indices());
 
     // Create the memlets in the new einsum block
-    for (size_t i = 0; i < this->einsum_node_.outputs().size(); ++i)
-        builder.add_memlet(new_block_einsum, libnode, this->einsum_node_.output(i),
-                           out_access[i].get(), "void", {});
-    for (size_t i = 0; i < this->einsum_node_.inputs().size(); ++i)
-        builder.add_memlet(new_block_einsum, in_access[i].get(), "void", libnode,
-                           this->einsum_node_.input(i), {});
+    for (size_t i = 0; i < this->einsum_node_.outputs().size(); ++i) {
+        if (out_access.contains(this->einsum_node_.output(i)))
+            builder.add_memlet(new_block_einsum, libnode, this->einsum_node_.output(i),
+                               out_access.at(this->einsum_node_.output(i)), "void", {});
+    }
+    for (size_t i = 0; i < this->einsum_node_.inputs().size(); ++i) {
+        if (in_access.contains(this->einsum_node_.input(i)))
+            builder.add_memlet(new_block_einsum, in_access.at(this->einsum_node_.input(i)), "void",
+                               libnode, this->einsum_node_.input(i), {});
+    }
 
     // Extract and copy dataflow before the original einsum node
     if (dataflow_before_einsum) {

@@ -440,15 +440,20 @@ void EinsumLift::apply(builder::StructuredSDFGBuilder& builder,
         if (input_conns.contains(input)) in_access.push_back(builder.add_access(block, input));
     }
 
-    // Create connectors
-    std::vector<std::string> in_conns;
+    // Create connectors (with scalars)
+    std::vector<std::string> in_conns, in_conns_with_scalars;
     for (size_t i = 0; i < inputs.size(); ++i) {
-        if (input_conns.contains(inputs[i]))
+        if (input_conns.contains(inputs[i])) {
             in_conns.push_back("_in" + std::to_string(i));
-        else
-            in_conns.push_back(inputs[i]);
+            in_conns_with_scalars.push_back("_in" + std::to_string(i));
+        } else {
+            in_conns_with_scalars.push_back(inputs[i]);
+        }
     }
-    if (out_in_scomp) in_conns[inputs.size() - 1] = "_out";
+    if (out_in_scomp) {
+        in_conns[in_conns.size() - 1] = "_out";
+        in_conns_with_scalars[in_conns_with_scalars.size() - 1] = "_out";
+    }
 
     // Add einsum node as library node
     auto& libnode =
@@ -456,14 +461,12 @@ void EinsumLift::apply(builder::StructuredSDFGBuilder& builder,
                                  const std::vector<std::string>&,
                                  std::vector<std::pair<symbolic::Symbol, symbolic::Expression>>,
                                  data_flow::Subset, std::vector<data_flow::Subset>>(
-            block, DebugInfo(), {"_out"}, in_conns, maps, out_indices, in_indices);
+            block, DebugInfo(), {"_out"}, in_conns_with_scalars, maps, out_indices, in_indices);
 
     // Add memlets
     builder.add_memlet(block, libnode, "_out", out_access, "void", {});
-    for (size_t i = 0; i < inputs.size(); ++i) {
-        if (input_conns.contains(inputs[i]))
-            builder.add_memlet(block, in_access[i], "void", libnode, in_conns[i], {});
-    }
+    for (size_t i = 0; i < in_access.size(); ++i)
+        builder.add_memlet(block, in_access[i], "void", libnode, in_conns[i], {});
 
     analysis_manager.invalidate_all();
 }
