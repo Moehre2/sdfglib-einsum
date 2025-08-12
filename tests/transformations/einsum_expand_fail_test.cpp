@@ -241,3 +241,42 @@ TEST(EinsumExpandFail, TempValueDependency_4) {
     transformations::EinsumExpand transformation(for_i, *einsum_node);
     EXPECT_FALSE(transformation.can_be_applied(builder_opt, analysis_manager));
 }
+
+TEST(EinsumExpandFail, input_is_indvar) {
+    builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
+
+    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    builder.add_container("i", sym_desc);
+    builder.add_container("n", sym_desc, true);
+
+    types::Scalar base_desc(types::PrimitiveType::Float);
+    types::Pointer desc(base_desc);
+    builder.add_container("u1", desc, true);
+
+    auto& root = builder.subject().root();
+
+    gen_for(i, n, root);
+
+    auto& block1 = builder.add_block(body_i);
+    auto& i = builder.add_access(block1, "i");
+    auto& u1 = builder.add_access(block1, "u1");
+    auto& libnode =
+        builder.add_library_node<einsum::EinsumNode, const std::vector<std::string>&,
+                                 const std::vector<std::string>&,
+                                 std::vector<std::pair<symbolic::Symbol, symbolic::Expression>>,
+                                 data_flow::Subset, std::vector<data_flow::Subset>>(
+            block1, DebugInfo(), {"_out"}, {"_in"}, {}, {indvar_i}, {{}});
+    builder.add_memlet(block1, i, "void", libnode, "_in", {});
+    builder.add_memlet(block1, libnode, "_out", u1, "void", {});
+
+    auto* einsum_node = dynamic_cast<einsum::EinsumNode*>(&libnode);
+    EXPECT_TRUE(einsum_node);
+
+    auto sdfg = builder.move();
+
+    builder::StructuredSDFGBuilder builder_opt(sdfg);
+    analysis::AnalysisManager analysis_manager(builder_opt.subject());
+
+    transformations::EinsumExpand transformation(for_i, *einsum_node);
+    EXPECT_FALSE(transformation.can_be_applied(builder_opt, analysis_manager));
+}

@@ -188,6 +188,13 @@ bool EinsumLift::can_be_applied(builder::StructuredSDFGBuilder& builder,
             comps.push_back({new_comp_out, new_comp});
     }
 
+    // Prevent one of the inputs to be a index variable
+    for (auto& input : inputs) {
+        for (auto loop : this->loops_) {
+            if (input == loop.get().indvar()->__str__()) return false;
+        }
+    }
+
     // Perform a fixed point iteration to join all captured calculations to one "dummy" calculation
     if (comps.size() == 0) return false;
     std::vector<bool> comps_used(comps.size(), false),

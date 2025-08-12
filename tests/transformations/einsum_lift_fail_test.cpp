@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include <sdfg/analysis/analysis.h>
 #include <sdfg/builder/structured_sdfg_builder.h>
+#include <sdfg/data_flow/tasklet.h>
 #include <sdfg/function.h>
 #include <sdfg/types/pointer.h>
 #include <sdfg/types/scalar.h>
@@ -267,6 +268,39 @@ TEST(EinsumLiftFail, invalid_loop_condition) {
     auto& body_i = for_i.root();
 
     auto& block2 = builder.add_block(body_i);
+
+    auto sdfg = builder.move();
+
+    builder::StructuredSDFGBuilder builder_opt(sdfg);
+    analysis::AnalysisManager analysis_manager(builder_opt.subject());
+
+    transformations::EinsumLift transformation({for_i}, block1);
+    EXPECT_FALSE(transformation.can_be_applied(builder_opt, analysis_manager));
+}
+
+TEST(EinsumLiftFail, input_is_indvar) {
+    builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
+
+    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    builder.add_container("i", sym_desc);
+    builder.add_container("I", sym_desc, true);
+
+    types::Scalar base_desc(types::PrimitiveType::Float);
+    builder.add_container("a", base_desc, true);
+
+    auto& root = builder.subject().root();
+
+    gen_for(i, I, root);
+
+    auto& block1 = builder.add_block(body_i);
+    auto& i = builder.add_access(block1, "i");
+    auto& a1 = builder.add_access(block1, "a");
+    auto& a2 = builder.add_access(block1, "a");
+    auto& tasklet1 = builder.add_tasklet(block1, data_flow::TaskletCode::add, {"_out", base_desc},
+                                         {{"_in1", base_desc}, {"_in2", sym_desc}});
+    builder.add_memlet(block1, a1, "void", tasklet1, "_in1", {});
+    builder.add_memlet(block1, i, "void", tasklet1, "_in2", {});
+    builder.add_memlet(block1, tasklet1, "_out", a2, "void", {});
 
     auto sdfg = builder.move();
 

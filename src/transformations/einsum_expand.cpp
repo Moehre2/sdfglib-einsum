@@ -107,6 +107,13 @@ bool EinsumExpand::can_be_applied(builder::StructuredSDFGBuilder& builder,
         !symbolic::eq(this->loop_.update()->get_args().at(1), symbolic::one()))
         return false;
 
+    // Prevent one of the einsum inputs to be the index variable
+    for (auto& iedge : block_einsum->dataflow().in_edges(this->einsum_node_)) {
+        if (dynamic_cast<const data_flow::AccessNode&>(iedge.src()).data() ==
+            this->loop_.indvar()->__str__())
+            return false;
+    }
+
     // Check that loop index does not collide with einsum map indices
     for (auto& map : this->einsum_node_.maps()) {
         if (symbolic::eq(map.first, this->loop_.indvar())) return false;
