@@ -41,7 +41,8 @@ add_library(sdfglib-einsum
 )
 target_include_directories(sdfglib-einsum
     PUBLIC
-        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:include>
 )
 target_compile_options(sdfglib-einsum PRIVATE -Wall -Wextra -Wpedantic -Werror -Wno-unused-parameter -Wno-unused-private-field -Wno-switch -Wno-deprecated-declarations)
 target_link_libraries(sdfglib-einsum PUBLIC sdfglib::sdfglib)
@@ -51,9 +52,43 @@ set_target_properties(sdfglib-einsum PROPERTIES
     SOVERSION ${PROJECT_VERSION_MAJOR}
 )
 
+## INSTALLATION
+
 install(TARGETS sdfglib-einsum
+    EXPORT sdfglibEinsumTargets
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
     PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+    INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+)
+install(DIRECTORY include/sdfg DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+
+## CMAKE CONFIGURATION
+
+install(EXPORT sdfglibEinsumTargets
+    NAMESPACE sdfglib::
+    FILE sdfglibEinsumTargets.cmake
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/sdfglib
+)
+
+include(CMakePackageConfigHelpers)
+
+write_basic_package_version_file(
+    "${CMAKE_CURRENT_BINARY_DIR}/sdfglibEinsumConfigVersion.cmake"
+    VERSION ${PROJECT_VERSION}
+    COMPATIBILITY SameMajorVersion
+)
+
+configure_package_config_file(
+    ${CMAKE_CURRENT_LIST_DIR}/cmake/sdfglibEinsumConfig.cmake.in
+    "${CMAKE_CURRENT_BINARY_DIR}/sdfglibEinsumConfig.cmake"
+    INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/sdfglib
+)
+
+install(FILES
+    "${CMAKE_CURRENT_BINARY_DIR}/sdfglibEinsumConfig.cmake"
+    "${CMAKE_CURRENT_BINARY_DIR}/sdfglibEinsumConfigVersion.cmake"
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/sdfglib
 )
 
 add_subdirectory(tests)
