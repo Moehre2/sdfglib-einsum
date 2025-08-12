@@ -31,8 +31,8 @@ set(SOURCE_FILES
     src/transformations/einsum2blas_axpy.cpp
     src/transformations/einsum2blas_copy.cpp
     src/transformations/einsum2blas_dot.cpp
+    src/transformations/einsum2blas_gemm.cpp
     src/transformations/einsum2blas_scal.cpp
-    src/transformations/einsum2blas.cpp
 )
 
 add_library(sdfglib-einsum

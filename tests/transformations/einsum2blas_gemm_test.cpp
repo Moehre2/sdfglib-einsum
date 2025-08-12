@@ -1,4 +1,4 @@
-#include "sdfg/transformations/einsum2blas.h"
+#include "sdfg/transformations/einsum2blas_gemm.h"
 
 #include <gtest/gtest.h>
 #include <sdfg/builder/structured_sdfg_builder.h>
@@ -19,7 +19,7 @@
 
 using namespace sdfg;
 
-TEST(Einsum2BLAS, MatrixMatrixMultiplication) {
+TEST(Einsum2BLASGemm, MatrixMatrixMultiplication) {
     builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
 
     types::Scalar sym_desc(types::PrimitiveType::UInt64);
@@ -68,7 +68,7 @@ TEST(Einsum2BLAS, MatrixMatrixMultiplication) {
     builder::StructuredSDFGBuilder builder_opt(sdfg);
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
 
-    transformations::Einsum2BLAS transformation(*einsum_node);
+    transformations::Einsum2BLASGemm transformation(*einsum_node);
     EXPECT_TRUE(transformation.can_be_applied(builder_opt, analysis_manager));
     transformation.apply(builder_opt, analysis_manager);
 

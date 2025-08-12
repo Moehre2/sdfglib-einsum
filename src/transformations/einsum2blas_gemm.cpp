@@ -1,4 +1,4 @@
-#include "sdfg/transformations/einsum2blas.h"
+#include "sdfg/transformations/einsum2blas_gemm.h"
 
 #include <sdfg/analysis/analysis.h>
 #include <sdfg/builder/structured_sdfg_builder.h>
@@ -20,11 +20,11 @@
 namespace sdfg {
 namespace transformations {
 
-Einsum2BLAS::Einsum2BLAS(einsum::EinsumNode& einsum_node) : einsum_node_(einsum_node) {}
+Einsum2BLASGemm::Einsum2BLASGemm(einsum::EinsumNode& einsum_node) : einsum_node_(einsum_node) {}
 
-std::string Einsum2BLAS::name() const { return "Einsum2BLAS"; }
+std::string Einsum2BLASGemm::name() const { return "Einsum2BLASGemm"; }
 
-bool Einsum2BLAS::can_be_applied(builder::StructuredSDFGBuilder& builder,
+bool Einsum2BLASGemm::can_be_applied(builder::StructuredSDFGBuilder& builder,
                                  analysis::AnalysisManager& analysis_manager) {
     // Check inputs
     if (this->einsum_node_.inputs().size() != 3) return false;
@@ -72,7 +72,7 @@ bool Einsum2BLAS::can_be_applied(builder::StructuredSDFGBuilder& builder,
     return true;
 }
 
-void Einsum2BLAS::apply(builder::StructuredSDFGBuilder& builder,
+void Einsum2BLASGemm::apply(builder::StructuredSDFGBuilder& builder,
                         analysis::AnalysisManager& analysis_manager) {
     // Map map indices to map bounds
     std::unordered_map<std::string, symbolic::Expression> maps;
@@ -138,12 +138,12 @@ void Einsum2BLAS::apply(builder::StructuredSDFGBuilder& builder,
     analysis_manager.invalidate_all();
 }
 
-void Einsum2BLAS::to_json(nlohmann::json& j) const {
+void Einsum2BLASGemm::to_json(nlohmann::json& j) const {
     j["transformation_type"] = this->name();
     j["einsum_node_id"] = this->einsum_node_.element_id();
 }
 
-Einsum2BLAS Einsum2BLAS::from_json(builder::StructuredSDFGBuilder& builder,
+Einsum2BLASGemm Einsum2BLASGemm::from_json(builder::StructuredSDFGBuilder& builder,
                                    const nlohmann::json& j) {
     size_t einsum_node_id = j["einsum_node_element_id"].get<size_t>();
     auto einsum_node_element = builder.find_element_by_id(einsum_node_id);
@@ -153,7 +153,7 @@ Einsum2BLAS Einsum2BLAS::from_json(builder::StructuredSDFGBuilder& builder,
     }
     auto einsum_node = dynamic_cast<einsum::EinsumNode*>(einsum_node_element);
 
-    return Einsum2BLAS(*einsum_node);
+    return Einsum2BLASGemm(*einsum_node);
 }
 
 }  // namespace transformations

@@ -25,8 +25,8 @@ set(TEST_FILES
     transformations/einsum2blas_axpy_test.cpp
     transformations/einsum2blas_copy_test.cpp
     transformations/einsum2blas_dot_test.cpp
+    transformations/einsum2blas_gemm_test.cpp
     transformations/einsum2blas_scal_test.cpp
-    transformations/einsum2blas_test.cpp
     test.cpp
 )
 

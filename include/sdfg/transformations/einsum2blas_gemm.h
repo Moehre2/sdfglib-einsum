@@ -12,11 +12,11 @@
 namespace sdfg {
 namespace transformations {
 
-class Einsum2BLAS : public Transformation {
+class Einsum2BLASGemm : public Transformation {
     einsum::EinsumNode& einsum_node_;
 
    public:
-    Einsum2BLAS(einsum::EinsumNode& einsum_node);
+    Einsum2BLASGemm(einsum::EinsumNode& einsum_node);
 
     virtual std::string name() const override;
 
@@ -28,7 +28,7 @@ class Einsum2BLAS : public Transformation {
 
     virtual void to_json(nlohmann::json& j) const override;
 
-    static Einsum2BLAS from_json(builder::StructuredSDFGBuilder& builder, const nlohmann::json& j);
+    static Einsum2BLASGemm from_json(builder::StructuredSDFGBuilder& builder, const nlohmann::json& j);
 };
 
 }  // namespace transformations
