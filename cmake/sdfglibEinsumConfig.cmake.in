@@ -1,0 +1,9 @@
+@PACKAGE_INIT@
+
+include(CMakeFindDependencyMacro)
+
+find_dependency(sdfglib CONFIG REQUIRED)
+
+include("${CMAKE_CURRENT_LIST_DIR}/sdfglibEinsumTargets.cmake")
+
+check_required_components(sdfglib-einsum)

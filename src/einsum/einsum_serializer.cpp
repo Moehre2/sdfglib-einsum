@@ -1,13 +1,14 @@
 #include "sdfg/einsum/einsum_serializer.h"
 
+#include <sdfg/data_flow/library_node.h>
+#include <sdfg/data_flow/memlet.h>
+#include <sdfg/serializer/json_serializer.h>
+#include <sdfg/symbolic/symbolic.h>
+#include <symengine/expression.h>
+
 #include <string>
 #include <utility>
 #include <vector>
-
-#include "sdfg/data_flow/library_node.h"
-#include "sdfg/serializer/json_serializer.h"
-#include "sdfg/symbolic/symbolic.h"
-#include "symengine/expression.h"
 
 namespace sdfg {
 namespace einsum {
@@ -49,14 +50,14 @@ nlohmann::json EinsumSerializer::serialize(const sdfg::data_flow::LibraryNode& l
 
     j["out_indices"] = nlohmann::json::array();
     for (const auto& index : einsum_node.out_indices()) {
-        j["out_indices"].push_back(index);
+        j["out_indices"].push_back(this->expression(index));
     }
 
     j["in_indices"] = nlohmann::json::array();
     for (const auto& indices : einsum_node.in_indices()) {
         nlohmann::json indicesj = nlohmann::json::array();
         for (const auto& index : indices) {
-            indicesj.push_back(index);
+            indicesj.push_back(this->expression(index));
         }
         j["in_indices"].push_back(indicesj);
     }
@@ -76,7 +77,6 @@ data_flow::LibraryNode& EinsumSerializer::deserialize(
         throw std::runtime_error("Invalid library node code");
     }
 
-    auto side_effect = j["side_effect"].get<bool>();
     auto inputs = j["inputs"].get<std::vector<std::string>>();
     auto outputs = j["outputs"].get<std::vector<std::string>>();
 
@@ -89,16 +89,28 @@ data_flow::LibraryNode& EinsumSerializer::deserialize(
         maps.push_back({symbolic::symbol(map_str[0]), SymEngine::Expression(map_str[1])});
     }
 
-    auto out_indices = j["out_indices"].get<std::vector<std::string>>();
+    data_flow::Subset out_indices;
+    auto out_indices_str = j["out_indices"].get<std::vector<std::string>>();
+    for (auto& index_str : out_indices_str) {
+        out_indices.push_back(SymEngine::Expression(index_str));
+    }
 
-    auto in_indices = j["in_indices"].get<std::vector<std::vector<std::string>>>();
+    std::vector<data_flow::Subset> in_indices;
+    auto in_indices_str = j["in_indices"].get<std::vector<std::vector<std::string>>>();
+    for (auto& indices_str : in_indices_str) {
+        data_flow::Subset subset;
+        for (auto& index_str : indices_str) {
+            subset.push_back(SymEngine::Expression(index_str));
+        }
+        in_indices.push_back(subset);
+    }
 
     auto& einsum_node =
-        builder.add_library_node<EinsumNode,
+        builder.add_library_node<EinsumNode, const std::vector<std::string>&,
+                                 const std::vector<std::string>&,
                                  std::vector<std::pair<symbolic::Symbol, symbolic::Expression>>,
-                                 std::vector<std::string>, std::vector<std::vector<std::string>>>(
-            parent, data_flow::LibraryNodeCode(code), outputs, inputs, side_effect, DebugInfo(),
-            maps, out_indices, in_indices);
+                                 data_flow::Subset, std::vector<data_flow::Subset>>(
+            parent, DebugInfo(), outputs, inputs, maps, out_indices, in_indices);
 
     return einsum_node;
 }

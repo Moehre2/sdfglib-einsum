@@ -14,7 +14,7 @@ TEST(EinsumNode, MatrixMatrixMultiplication) {
     EXPECT_TRUE(node);
 
     EXPECT_EQ(node->toStr(),
-              "_out[i,k] = _in1[i,j] * _in2[j,k] for i = 0:I for j = 0:J for k = 0:K");
+              "_out[i,k] = _out[i,k] + _in1[i,j] * _in2[j,k] for i = 0:I for j = 0:J for k = 0:K");
 }
 
 TEST(EinsumNode, TensorContraction3D) {
@@ -25,8 +25,8 @@ TEST(EinsumNode, TensorContraction3D) {
     EXPECT_TRUE(node);
 
     EXPECT_EQ(node->toStr(),
-              "_out[i,j,k] = _in1[l,j,m] * _in2[i,l,n] * _in3[n,m,k] for i = 0:I for j = 0:J for k "
-              "= 0:K for l = 0:L for m = 0:M for n = 0:N");
+              "_out[i,j,k] = _out[i,j,k] + _in1[l,j,m] * _in2[i,l,n] * _in3[n,m,k] for i = 0:I for "
+              "j = 0:J for k = 0:K for l = 0:L for m = 0:M for n = 0:N");
 }
 
 TEST(EinsumNode, MatrixVectorMultiplication) {
@@ -36,7 +36,7 @@ TEST(EinsumNode, MatrixVectorMultiplication) {
 
     EXPECT_TRUE(node);
 
-    EXPECT_EQ(node->toStr(), "_out[i] = _in1[i,j] * _in2[j] for i = 0:I for j = 0:J");
+    EXPECT_EQ(node->toStr(), "_out[i] = _out[i] + _in1[i,j] * _in2[j] for i = 0:I for j = 0:J");
 }
 
 TEST(EinsumNode, DiagonalExtraction) {
@@ -56,7 +56,7 @@ TEST(EinsumNode, MatrixTrace) {
 
     EXPECT_TRUE(node);
 
-    EXPECT_EQ(node->toStr(), "_out = _in[i,i] for i = 0:I");
+    EXPECT_EQ(node->toStr(), "_out = _out + _in[i,i] for i = 0:I");
 }
 
 TEST(EinsumNode, MatrixCopy) {
@@ -86,7 +86,7 @@ TEST(EinsumNode, DotProduct) {
 
     EXPECT_TRUE(node);
 
-    EXPECT_EQ(node->toStr(), "_out = _in1[i] * _in2[i] for i = 0:I");
+    EXPECT_EQ(node->toStr(), "_out = _out + _in1[i] * _in2[i] for i = 0:I");
 }
 
 TEST(EinsumNode, MatrixElementwiseMultiplication) {
