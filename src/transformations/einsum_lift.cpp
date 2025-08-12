@@ -457,6 +457,8 @@ void EinsumLift::apply(builder::StructuredSDFGBuilder& builder,
         if (input_conns.contains(inputs[i]))
             builder.add_memlet(block, in_access[i], "void", libnode, in_conns[i], {});
     }
+
+    analysis_manager.invalidate_all();
 }
 
 void EinsumLift::to_json(nlohmann::json& j) const {

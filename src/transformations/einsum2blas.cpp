@@ -134,6 +134,8 @@ void Einsum2BLAS::apply(builder::StructuredSDFGBuilder& builder,
 
     // Remove the einsum node
     builder.remove_node(*block, this->einsum_node_);
+
+    analysis_manager.invalidate_all();
 }
 
 void Einsum2BLAS::to_json(nlohmann::json& j) const {

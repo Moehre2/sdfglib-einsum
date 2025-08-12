@@ -157,6 +157,8 @@ void Einsum2BLASScal::apply(builder::StructuredSDFGBuilder& builder,
 
     // Remove the einsum node
     builder.remove_node(*block, this->einsum_node_);
+
+    analysis_manager.invalidate_all();
 }
 
 void Einsum2BLASScal::to_json(nlohmann::json& j) const {

@@ -368,6 +368,8 @@ void EinsumExpand::apply(builder::StructuredSDFGBuilder& builder,
 
     // If the loop is empty now, remove it
     if (this->loop_.root().size() == 0) builder.remove_child(parent, this->loop_);
+
+    analysis_manager.invalidate_all();
 }
 
 void EinsumExpand::to_json(nlohmann::json& j) const {
