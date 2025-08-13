@@ -24,6 +24,17 @@ constexpr const char* blasType2String(const BLASType type) {
     }
 }
 
+enum BLASTranspose { BLASTranspose_No, BLASTranspose_Transpose };
+
+constexpr const char* blasTranspose2String(const BLASTranspose transpose) {
+    switch (transpose) {
+        case BLASTranspose_No:
+            return "'N'";
+        case BLASTranspose_Transpose:
+            return "'T'";
+    }
+}
+
 class BLASNode : public data_flow::LibraryNode {
     BLASType type_;
 
