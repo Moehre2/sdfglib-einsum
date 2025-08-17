@@ -20,6 +20,7 @@ TEST(EinsumDispatcher, MatrixMatrixMultiplication) {
     EXPECT_EQ(generator.main().str(), R"(unsigned long long k;
 unsigned long long j;
 unsigned long long i;
+    // Einsum Node
     {
         float **_in1 = A;
         float **_in2 = B;
@@ -101,6 +102,7 @@ unsigned long long j;
 unsigned long long i;
     for(i = 0;i < I;i = 1 + i)
     {
+            // Einsum Node
             {
                 float **_in1 = A;
                 float **_in2 = B;
@@ -185,6 +187,7 @@ unsigned long long i;
     {
             for(k = 0;k < K;k = 1 + k)
             {
+                    // Einsum Node
                     {
                         float **_in1 = A;
                         float **_in2 = B;
@@ -223,6 +226,7 @@ unsigned long long l;
 unsigned long long n;
 unsigned long long k;
 unsigned long long m;
+    // Einsum Node
     {
         float ***_in1 = A;
         float ***_in2 = B;
@@ -270,6 +274,7 @@ TEST(EinsumDispatcher, MatrixVectorMultiplication) {
               "float *c)");
     EXPECT_EQ(generator.main().str(), R"(unsigned long long j;
 unsigned long long i;
+    // Einsum Node
     {
         float **_in1 = A;
         float *_in2 = b;
@@ -302,6 +307,7 @@ TEST(EinsumDispatcher, DiagonalExtraction) {
     EXPECT_EQ(generator.function_definition(),
               "extern void sdfg_1(unsigned long long I, float **A, float *b)");
     EXPECT_EQ(generator.main().str(), R"(unsigned long long i;
+    // Einsum Node
     {
         float **_in = A;
 
@@ -330,6 +336,7 @@ TEST(EinsumDispatcher, MatrixTrace) {
     EXPECT_EQ(generator.function_definition(),
               "extern void sdfg_1(unsigned long long I, float **A, float *b)");
     EXPECT_EQ(generator.main().str(), R"(unsigned long long i;
+    // Einsum Node
     {
         float **_in = A;
 
@@ -360,6 +367,7 @@ TEST(EinsumDispatcher, MatrixCopy) {
         "extern void sdfg_1(unsigned long long I, unsigned long long J, float **A, float **B)");
     EXPECT_EQ(generator.main().str(), R"(unsigned long long j;
 unsigned long long i;
+    // Einsum Node
     {
         float **_in = A;
 
@@ -393,6 +401,7 @@ TEST(EinsumDispatcher, MatrixTranspose) {
         "extern void sdfg_1(unsigned long long I, unsigned long long J, float **A, float **B)");
     EXPECT_EQ(generator.main().str(), R"(unsigned long long j;
 unsigned long long i;
+    // Einsum Node
     {
         float **_in = A;
 
@@ -424,6 +433,7 @@ TEST(EinsumDispatcher, DotProduct) {
     EXPECT_EQ(generator.function_definition(),
               "extern void sdfg_1(unsigned long long I, float *a, float *b, float *c)");
     EXPECT_EQ(generator.main().str(), R"(unsigned long long i;
+    // Einsum Node
     {
         float *_in1 = a;
         float *_in2 = b;
@@ -455,6 +465,7 @@ TEST(EinsumDispatcher, MatrixElementwiseMultiplication) {
               "**B, float **C, float **D)");
     EXPECT_EQ(generator.main().str(), R"(unsigned long long j;
 unsigned long long i;
+    // Einsum Node
     {
         float **_in1 = A;
         float **_in2 = B;
@@ -489,6 +500,7 @@ TEST(EinsumDispatcher, VectorScaling) {
               "extern void sdfg_1(unsigned long long I, float *a, float b, float c, float d, "
               "float *e)");
     EXPECT_EQ(generator.main().str(), R"(unsigned long long i;
+    // Einsum Node
     {
         float *_in1 = a;
         float _in2 = b;

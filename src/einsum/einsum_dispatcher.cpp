@@ -29,6 +29,7 @@ EinsumDispatcher::EinsumDispatcher(codegen::LanguageExtension& language_extensio
     : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {}
 
 void EinsumDispatcher::dispatch(codegen::PrettyPrinter& stream) {
+    stream << "// Einsum Node" << std::endl;
     stream << "{" << std::endl;
     stream.setIndent(stream.indent() + 4);
 
