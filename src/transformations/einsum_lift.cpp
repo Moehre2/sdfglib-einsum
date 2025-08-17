@@ -27,6 +27,18 @@
 #include "sdfg/einsum/einsum_node.h"
 
 namespace sdfg {
+
+void dump_expr(symbolic::Expression& expr, size_t indent = 0) {
+    std::cout << std::string(indent, ' ') << SymEngine::type_code_name(expr->get_type_code())
+              << ":";
+    if (expr->get_args().size() == 0) {
+        std::cout << " " << expr->__str__() << std::endl;
+    } else {
+        std::cout << std::endl;
+        for (auto& subexpr : expr->get_args()) dump_expr(subexpr, indent + 2);
+    }
+}
+
 namespace transformations {
 
 symbolic::Expression EinsumLift::taskletCode2Expr(const data_flow::TaskletCode code,
@@ -258,7 +270,8 @@ bool EinsumLift::can_be_applied(builder::StructuredSDFGBuilder& builder,
 
     // Simplify "dummy" calculation and check if it can be represented in Einstein notation
     symbolic::Expression scomp = symbolic::simplify(comp);
-    if (scomp->get_type_code() == SymEngine::TypeID::SYMENGINE_ADD) {
+    if (scomp->get_type_code() == SymEngine::TypeID::SYMENGINE_ADD &&
+        scomp->get_args().size() == 2) {
         symbolic::Expression scomp_mul;
         if (scomp->get_args().at(0)->get_type_code() == SymEngine::TypeID::SYMENGINE_SYMBOL &&
             symbolic::eq(scomp->get_args().at(0), comp_out))
