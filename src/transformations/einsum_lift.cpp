@@ -114,18 +114,11 @@ bool EinsumLift::can_be_applied(builder::StructuredSDFGBuilder& builder,
     for (auto loop : this->loops_) {
         if (loop.get().init()->get_type_code() != SymEngine::TypeID::SYMENGINE_INTEGER)
             return false;
-        if (loop.get().init()->__str__() != "0") return false;
-        if (loop.get().condition()->get_type_code() !=
-                SymEngine::TypeID::SYMENGINE_STRICTLESSTHAN &&
-            loop.get().condition()->get_type_code() != SymEngine::TypeID::SYMENGINE_LESSTHAN)
+        if (!symbolic::eq(loop.get().init(), symbolic::zero())) return false;
+        if (loop.get().condition()->get_type_code() != SymEngine::TypeID::SYMENGINE_STRICTLESSTHAN)
             return false;
         if (loop.get().condition()->get_args().size() != 2) return false;
         if (loop.get().condition()->get_args().at(0)->__str__() != loop.get().indvar()->__str__())
-            return false;
-        if (loop.get().condition()->get_args().at(1)->get_type_code() !=
-                SymEngine::TypeID::SYMENGINE_INTEGER &&
-            loop.get().condition()->get_args().at(1)->get_type_code() !=
-                SymEngine::TypeID::SYMENGINE_SYMBOL)
             return false;
         if (loop.get().update()->get_type_code() != SymEngine::TypeID::SYMENGINE_ADD) return false;
         if (loop.get().update()->get_args().size() != 2) return false;

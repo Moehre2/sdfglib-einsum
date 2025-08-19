@@ -86,16 +86,10 @@ bool EinsumExpand::can_be_applied(builder::StructuredSDFGBuilder& builder,
     // Check that the loop is of sufficient form
     if (this->loop_.init()->get_type_code() != SymEngine::TypeID::SYMENGINE_INTEGER) return false;
     if (!symbolic::eq(this->loop_.init(), symbolic::zero())) return false;
-    if (this->loop_.condition()->get_type_code() != SymEngine::TypeID::SYMENGINE_STRICTLESSTHAN &&
-        this->loop_.condition()->get_type_code() != SymEngine::TypeID::SYMENGINE_LESSTHAN)
+    if (this->loop_.condition()->get_type_code() != SymEngine::TypeID::SYMENGINE_STRICTLESSTHAN)
         return false;
     if (this->loop_.condition()->get_args().size() != 2) return false;
     if (!symbolic::eq(this->loop_.condition()->get_args().at(0), this->loop_.indvar()))
-        return false;
-    if (this->loop_.condition()->get_args().at(1)->get_type_code() !=
-            SymEngine::TypeID::SYMENGINE_INTEGER &&
-        this->loop_.condition()->get_args().at(1)->get_type_code() !=
-            SymEngine::TypeID::SYMENGINE_SYMBOL)
         return false;
     if (this->loop_.update()->get_type_code() != SymEngine::TypeID::SYMENGINE_ADD) return false;
     if (this->loop_.update()->get_args().size() != 2) return false;
@@ -128,20 +122,40 @@ bool EinsumExpand::can_be_applied(builder::StructuredSDFGBuilder& builder,
         }
     }
 
-    // Check that the output container contains the index variable of the loop
-    if (!this->subsetContainsSymbol(this->einsum_node_.out_indices(), this->loop_.indvar()))
-        return false;
-
-    // Determine the element ids of all elements inside the loop before the einsum node
-    auto topo_sort = block_einsum->dataflow().topological_sort();
-    std::set<size_t> elements_before_einsum;
-    for (size_t i = 0; i < loop_root_index; ++i) {
-        this->visitElements(elements_before_einsum, this->loop_.root().at(i).first);
-        elements_before_einsum.insert(this->loop_.root().at(i).second.element_id());
+    // Check that the out indices contain the index variable of the loop or ...
+    if (!this->subsetContainsSymbol(this->einsum_node_.out_indices(), this->loop_.indvar())) {
+        // ... the loops are not "correctly" ordered
+        bool in_indices_contain_loop_index = false;
+        for (auto& indices : this->einsum_node_.in_indices()) {
+            if (this->subsetContainsSymbol(indices, this->loop_.indvar())) {
+                in_indices_contain_loop_index = true;
+                break;
+            }
+        }
+        if (!in_indices_contain_loop_index) return false;
     }
+
+    // Determine the element ids of all elements inside the loop before and after the einsum node
+    auto topo_sort = block_einsum->dataflow().topological_sort();
+    std::set<size_t> elements_before_einsum, elements_after_einsum;
+    for (size_t i = 0; i < this->loop_.root().size(); ++i) {
+        if (i < loop_root_index) {
+            this->visitElements(elements_before_einsum, this->loop_.root().at(i).first);
+            elements_before_einsum.insert(this->loop_.root().at(i).second.element_id());
+        } else if (i > loop_root_index) {
+            this->visitElements(elements_after_einsum, this->loop_.root().at(i).first);
+            elements_after_einsum.insert(this->loop_.root().at(i).second.element_id());
+        }
+    }
+    bool before_einsum = true;
     for (auto* node : topo_sort) {
-        if (dynamic_cast<einsum::EinsumNode*>(node) == &this->einsum_node_) break;
-        elements_before_einsum.insert(node->element_id());
+        if (dynamic_cast<einsum::EinsumNode*>(node) == &this->einsum_node_) {
+            before_einsum = false;
+        } else if (before_einsum) {
+            elements_before_einsum.insert(node->element_id());
+        } else {
+            elements_after_einsum.insert(node->element_id());
+        }
     }
 
     // Create a map from each input connector to its input container of the einsum node
@@ -149,6 +163,13 @@ bool EinsumExpand::can_be_applied(builder::StructuredSDFGBuilder& builder,
     for (auto& iedge : block_einsum->dataflow().in_edges(this->einsum_node_)) {
         auto& src = dynamic_cast<const data_flow::AccessNode&>(iedge.src());
         in_containers.insert({iedge.dst_conn(), src.data()});
+    }
+
+    // Create a map from each output connector to its output container of the einsum node
+    std::unordered_map<std::string, std::string> out_containers;
+    for (auto& oedge : block_einsum->dataflow().out_edges(this->einsum_node_)) {
+        auto& dst = dynamic_cast<const data_flow::AccessNode&>(oedge.dst());
+        out_containers.insert({oedge.src_conn(), dst.data()});
     }
 
     // Perform a user analysis
@@ -163,6 +184,33 @@ bool EinsumExpand::can_be_applied(builder::StructuredSDFGBuilder& builder,
             if (user && user->use() == analysis::Use::WRITE && user->element() &&
                 elements_before_einsum.contains(user->element()->element_id()) &&
                 !this->subsetContainsSymbol(this->einsum_node_.in_indices(i), this->loop_.indvar()))
+                return false;
+        }
+    }
+
+    // Check for the output container of the einsum node: If it is read accessed inside the loop
+    // after the einsum node, the loop index variable has to be in the output indices
+    if (out_containers.contains(this->einsum_node_.output(0))) {
+        for (auto* user : users.uses(out_containers.at(this->einsum_node_.output(0)))) {
+            if (user && user->use() == analysis::Use::READ && user->element() &&
+                elements_after_einsum.contains(user->element()->element_id()) &&
+                !this->subsetContainsSymbol(this->einsum_node_.out_indices(), this->loop_.indvar()))
+                return false;
+        }
+    }
+
+    // Check dependency on symbols of the einsum node inside the loop
+    symbolic::SymbolSet map_indvars;
+    for (auto& maps : this->einsum_node_.maps()) map_indvars.insert(maps.first);
+    for (auto& sym : this->einsum_node_.symbols()) {
+        for (auto* user : users.uses(sym->__str__())) {
+            if (user && user->use() == analysis::Use::WRITE && user->element() &&
+                elements_before_einsum.contains(user->element()->element_id()) &&
+                !map_indvars.contains(sym))
+                return false;
+            if (user && user->use() == analysis::Use::WRITE && user->element() &&
+                elements_after_einsum.contains(user->element()->element_id()) &&
+                !map_indvars.contains(sym))
                 return false;
         }
     }
