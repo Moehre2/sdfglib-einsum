@@ -428,9 +428,25 @@ void EinsumLift::apply(builder::StructuredSDFGBuilder& builder,
         most_outer_node = &this->loops_[0].get();
     auto& parent = builder.parent(*most_outer_node);
 
-    // Add a new block after the most outer node and remove the most outer node
+    // Add a new block after the most outer node
     auto block_and_transition = builder.add_block_after(parent, *most_outer_node);
     auto& block = block_and_transition.first;
+
+    // Find position of most outer node
+    size_t most_outer_node_index;
+    for (most_outer_node_index = 0; most_outer_node_index < parent.size();
+         ++most_outer_node_index) {
+        if (parent.at(most_outer_node_index).first.element_id() == most_outer_node->element_id())
+            break;
+    }
+    assert(most_outer_node_index < parent.size());
+
+    // Copy assignments
+    block_and_transition.second.assignments().insert(
+        parent.at(most_outer_node_index).second.assignments().begin(),
+        parent.at(most_outer_node_index).second.assignments().end());
+
+    // Remove the most outer node
     builder.remove_child(parent, *most_outer_node);
 
     // Put output back into inputs and in_indices if it was there before
