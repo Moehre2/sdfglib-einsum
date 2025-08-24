@@ -1,22 +1,26 @@
-#include "sdfg/blas/blas_dispatcher_scal.h"
+#include "sdfg/blas/blas_dispatcher_gemv.h"
 
 #include <sdfg/codegen/dispatchers/block_dispatcher.h>
 #include <sdfg/codegen/language_extension.h>
 #include <sdfg/codegen/utils.h>
+#include <sdfg/data_flow/access_node.h>
 #include <sdfg/data_flow/data_flow_graph.h>
 #include <sdfg/data_flow/library_node.h>
 #include <sdfg/function.h>
 
+#include "sdfg/blas/blas_node.h"
+#include "sdfg/blas/blas_node_gemv.h"
+
 namespace sdfg {
 namespace blas {
 
-BLASDispatcherScal::BLASDispatcherScal(codegen::LanguageExtension& language_extension,
+BLASDispatcherGemv::BLASDispatcherGemv(codegen::LanguageExtension& language_extension,
                                        const Function& function,
                                        const data_flow::DataFlowGraph& data_flow_graph,
                                        const data_flow::LibraryNode& node)
     : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {}
 
-void BLASDispatcherScal::dispatch(codegen::PrettyPrinter& stream) {
+void BLASDispatcherGemv::dispatch(codegen::PrettyPrinter& stream) {
     stream << "{" << std::endl;
     stream.setIndent(stream.indent() + 4);
 
@@ -33,10 +37,22 @@ void BLASDispatcherScal::dispatch(codegen::PrettyPrinter& stream) {
     }
     stream << std::endl;
 
-    auto& blas_node = dynamic_cast<const BLASNodeScal&>(this->node_);
+    auto& blas_node = dynamic_cast<const BLASNodeGemv&>(this->node_);
 
-    stream << "cblas_" << blasType2String(blas_node.type()) << "scal(" << blas_node.n()->__str__()
-           << ", " << blas_node.alpha() << ", " << blas_node.x() << ", 1);" << std::endl;
+    stream << "cblas_" << blasType2String(blas_node.type()) << "gemv(CblasRowMajor, ";
+    switch (blas_node.trans()) {
+        case BLASTranspose_No:
+            stream << "CblasNoTrans";
+            break;
+        case BLASTranspose_Transpose:
+            stream << "CblasTrans";
+            break;
+    }
+    stream << ", " << blas_node.m()->__str__() << ", " << blas_node.n()->__str__() << ", "
+           << blas_node.alpha() << ", " << blas_node.A() << ", " << blas_node.n()->__str__() << ", "
+           << blas_node.x() << ", 1, 1.0";
+    if (blas_node.type() == BLASType_real) stream << "f";
+    stream << ", " << blas_node.y() << ", 1);" << std::endl;
 
     stream.setIndent(stream.indent() - 4);
     stream << "}" << std::endl;

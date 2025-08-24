@@ -119,8 +119,28 @@ std::unique_ptr<data_flow::DataFlowNode> EinsumNode::clone(size_t element_id,
 }
 
 symbolic::SymbolSet EinsumNode::symbols() const {
-    // TODO: Implement
-    return {};
+    symbolic::SymbolSet result;
+
+    // Maps
+    for (auto& map : this->maps()) {
+        result.insert(map.first);
+        symbolic::SymbolSet atoms = symbolic::atoms(map.second);
+        result.insert(atoms.begin(), atoms.end());
+    }
+
+    // Indices
+    for (auto& expr : this->out_indices()) {
+        symbolic::SymbolSet atoms = symbolic::atoms(expr);
+        result.insert(atoms.begin(), atoms.end());
+    }
+    for (auto& indices : this->in_indices()) {
+        for (auto& expr : indices) {
+            symbolic::SymbolSet atoms = symbolic::atoms(expr);
+            result.insert(atoms.begin(), atoms.end());
+        }
+    }
+
+    return result;
 }
 
 void EinsumNode::validate() const {

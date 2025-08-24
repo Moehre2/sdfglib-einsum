@@ -2,20 +2,27 @@
 
 #include <sdfg/analysis/analysis.h>
 #include <sdfg/builder/structured_sdfg_builder.h>
+#include <sdfg/symbolic/symbolic.h>
 #include <sdfg/transformations/transformation.h>
 
 #include <nlohmann/json_fwd.hpp>
+#include <string>
 
 #include "sdfg/einsum/einsum_node.h"
 
 namespace sdfg {
 namespace transformations {
 
-class Einsum2BLASScal : public Transformation {
+class Einsum2BLASGemv : public Transformation {
     einsum::EinsumNode& einsum_node_;
 
+    bool check_matrix_indices(const symbolic::Expression& mat_index1,
+                              const symbolic::Expression& mat_index2,
+                              const symbolic::Symbol& loop_index1,
+                              const symbolic::Symbol& loop_index2);
+
    public:
-    Einsum2BLASScal(einsum::EinsumNode& einsum_node);
+    Einsum2BLASGemv(einsum::EinsumNode& einsum_node);
 
     virtual std::string name() const override;
 
@@ -27,7 +34,7 @@ class Einsum2BLASScal : public Transformation {
 
     virtual void to_json(nlohmann::json& j) const override;
 
-    static Einsum2BLASScal from_json(builder::StructuredSDFGBuilder& builder,
+    static Einsum2BLASGemv from_json(builder::StructuredSDFGBuilder& builder,
                                      const nlohmann::json& j);
 };
 

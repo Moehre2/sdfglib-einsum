@@ -8,28 +8,26 @@
 #include <sdfg/data_flow/library_node.h>
 #include <sdfg/function.h>
 
-#include <memory>
-
-#include "sdfg/blas/blas_node_scal.h"
+#include "sdfg/blas/blas_node_gemv.h"
 
 namespace sdfg {
 namespace blas {
 
-class BLASDispatcherScal : public codegen::LibraryNodeDispatcher {
+class BLASDispatcherGemv : public codegen::LibraryNodeDispatcher {
    public:
-    BLASDispatcherScal(codegen::LanguageExtension& language_extension, const Function& function,
+    BLASDispatcherGemv(codegen::LanguageExtension& language_extension, const Function& function,
                        const data_flow::DataFlowGraph& data_flow_graph,
                        const data_flow::LibraryNode& node);
 
     virtual void dispatch(codegen::PrettyPrinter& stream) override;
 };
 
-inline void register_blas_dispatcher_scal() {
+inline void register_blas_dispatcher_gemv() {
     codegen::LibraryNodeDispatcherRegistry::instance().register_library_node_dispatcher(
-        LibraryNodeType_BLAS_scal.value(),
+        LibraryNodeType_BLAS_gemv.value(),
         [](codegen::LanguageExtension& language_extension, const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph, const data_flow::LibraryNode& node) {
-            return std::make_unique<BLASDispatcherScal>(language_extension, function,
+            return std::make_unique<BLASDispatcherGemv>(language_extension, function,
                                                         data_flow_graph, node);
         });
 }

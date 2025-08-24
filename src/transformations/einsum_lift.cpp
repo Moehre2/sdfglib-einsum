@@ -27,6 +27,18 @@
 #include "sdfg/einsum/einsum_node.h"
 
 namespace sdfg {
+
+void dump_expr(symbolic::Expression& expr, size_t indent = 0) {
+    std::cout << std::string(indent, ' ') << SymEngine::type_code_name(expr->get_type_code())
+              << ":";
+    if (expr->get_args().size() == 0) {
+        std::cout << " " << expr->__str__() << std::endl;
+    } else {
+        std::cout << std::endl;
+        for (auto& subexpr : expr->get_args()) dump_expr(subexpr, indent + 2);
+    }
+}
+
 namespace transformations {
 
 symbolic::Expression EinsumLift::taskletCode2Expr(const data_flow::TaskletCode code,
@@ -102,18 +114,11 @@ bool EinsumLift::can_be_applied(builder::StructuredSDFGBuilder& builder,
     for (auto loop : this->loops_) {
         if (loop.get().init()->get_type_code() != SymEngine::TypeID::SYMENGINE_INTEGER)
             return false;
-        if (loop.get().init()->__str__() != "0") return false;
-        if (loop.get().condition()->get_type_code() !=
-                SymEngine::TypeID::SYMENGINE_STRICTLESSTHAN &&
-            loop.get().condition()->get_type_code() != SymEngine::TypeID::SYMENGINE_LESSTHAN)
+        if (!symbolic::eq(loop.get().init(), symbolic::zero())) return false;
+        if (loop.get().condition()->get_type_code() != SymEngine::TypeID::SYMENGINE_STRICTLESSTHAN)
             return false;
         if (loop.get().condition()->get_args().size() != 2) return false;
         if (loop.get().condition()->get_args().at(0)->__str__() != loop.get().indvar()->__str__())
-            return false;
-        if (loop.get().condition()->get_args().at(1)->get_type_code() !=
-                SymEngine::TypeID::SYMENGINE_INTEGER &&
-            loop.get().condition()->get_args().at(1)->get_type_code() !=
-                SymEngine::TypeID::SYMENGINE_SYMBOL)
             return false;
         if (loop.get().update()->get_type_code() != SymEngine::TypeID::SYMENGINE_ADD) return false;
         if (loop.get().update()->get_args().size() != 2) return false;
@@ -258,7 +263,8 @@ bool EinsumLift::can_be_applied(builder::StructuredSDFGBuilder& builder,
 
     // Simplify "dummy" calculation and check if it can be represented in Einstein notation
     symbolic::Expression scomp = symbolic::simplify(comp);
-    if (scomp->get_type_code() == SymEngine::TypeID::SYMENGINE_ADD) {
+    if (scomp->get_type_code() == SymEngine::TypeID::SYMENGINE_ADD &&
+        scomp->get_args().size() == 2) {
         symbolic::Expression scomp_mul;
         if (scomp->get_args().at(0)->get_type_code() == SymEngine::TypeID::SYMENGINE_SYMBOL &&
             symbolic::eq(scomp->get_args().at(0), comp_out))
@@ -422,9 +428,25 @@ void EinsumLift::apply(builder::StructuredSDFGBuilder& builder,
         most_outer_node = &this->loops_[0].get();
     auto& parent = builder.parent(*most_outer_node);
 
-    // Add a new block after the most outer node and remove the most outer node
+    // Add a new block after the most outer node
     auto block_and_transition = builder.add_block_after(parent, *most_outer_node);
     auto& block = block_and_transition.first;
+
+    // Find position of most outer node
+    size_t most_outer_node_index;
+    for (most_outer_node_index = 0; most_outer_node_index < parent.size();
+         ++most_outer_node_index) {
+        if (parent.at(most_outer_node_index).first.element_id() == most_outer_node->element_id())
+            break;
+    }
+    assert(most_outer_node_index < parent.size());
+
+    // Copy assignments
+    block_and_transition.second.assignments().insert(
+        parent.at(most_outer_node_index).second.assignments().begin(),
+        parent.at(most_outer_node_index).second.assignments().end());
+
+    // Remove the most outer node
     builder.remove_child(parent, *most_outer_node);
 
     // Put output back into inputs and in_indices if it was there before

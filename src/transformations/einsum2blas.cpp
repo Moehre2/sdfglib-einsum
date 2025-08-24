@@ -16,18 +16,18 @@ namespace transformations {
 Einsum2BLAS::Einsum2BLAS(einsum::EinsumNode& einsum_node)
     : einsum_node_(einsum_node),
       axpy_(einsum_node),
-      scal_(einsum_node),
       copy_(einsum_node),
-      dot_(einsum_node) {}
+      dot_(einsum_node),
+      gemv_(einsum_node) {}
 
 std::string Einsum2BLAS::name() const { return "Einsum2BLAS"; }
 
 bool Einsum2BLAS::can_be_applied(builder::StructuredSDFGBuilder& builder,
                                  analysis::AnalysisManager& analysis_manager) {
     if (this->axpy_.can_be_applied(builder, analysis_manager)) return true;
-    if (this->scal_.can_be_applied(builder, analysis_manager)) return true;
     if (this->copy_.can_be_applied(builder, analysis_manager)) return true;
     if (this->dot_.can_be_applied(builder, analysis_manager)) return true;
+    if (this->gemv_.can_be_applied(builder, analysis_manager)) return true;
     return false;
 }
 
@@ -37,16 +37,16 @@ void Einsum2BLAS::apply(builder::StructuredSDFGBuilder& builder,
         this->axpy_.apply(builder, analysis_manager);
         return;
     }
-    if (this->scal_.can_be_applied(builder, analysis_manager)) {
-        this->scal_.apply(builder, analysis_manager);
-        return;
-    }
     if (this->copy_.can_be_applied(builder, analysis_manager)) {
         this->copy_.apply(builder, analysis_manager);
         return;
     }
     if (this->dot_.can_be_applied(builder, analysis_manager)) {
         this->dot_.apply(builder, analysis_manager);
+        return;
+    }
+    if (this->gemv_.can_be_applied(builder, analysis_manager)) {
+        this->gemv_.apply(builder, analysis_manager);
         return;
     }
 }

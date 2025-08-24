@@ -11,7 +11,7 @@
 #include "sdfg/transformations/einsum2blas_axpy.h"
 #include "sdfg/transformations/einsum2blas_copy.h"
 #include "sdfg/transformations/einsum2blas_dot.h"
-#include "sdfg/transformations/einsum2blas_scal.h"
+#include "sdfg/transformations/einsum2blas_gemv.h"
 
 namespace sdfg {
 namespace transformations {
@@ -19,9 +19,9 @@ namespace transformations {
 class Einsum2BLAS : public Transformation {
     einsum::EinsumNode& einsum_node_;
     Einsum2BLASAxpy axpy_;
-    Einsum2BLASScal scal_;
     Einsum2BLASCopy copy_;
     Einsum2BLASDot dot_;
+    Einsum2BLASGemv gemv_;
 
    public:
     Einsum2BLAS(einsum::EinsumNode& einsum_node);
