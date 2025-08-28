@@ -518,3 +518,143 @@ TEST(EinsumDispatcher, VectorScaling) {
     }
 )");
 }
+
+TEST(EinsumDispatcher, ssymvL) {
+    builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
+
+    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    builder.add_container("i", sym_desc);
+    builder.add_container("I", sym_desc, true);
+    builder.add_container("j", sym_desc);
+    builder.add_container("J", sym_desc, true);
+
+    types::Scalar base_desc(types::PrimitiveType::Float);
+    types::Pointer desc(base_desc);
+    types::Pointer desc2(*desc.clone());
+    builder.add_container("A", desc2, true);
+    builder.add_container("x", desc, true);
+    builder.add_container("y", desc, true);
+
+    auto indvar_i = symbolic::symbol("i");
+    auto bound_i = symbolic::symbol("I");
+    auto indvar_j = symbolic::symbol("j");
+    auto bound_j = symbolic::add(indvar_i, symbolic::one());
+
+    auto& root = builder.subject().root();
+    auto& block = builder.add_block(root);
+    auto& A = builder.add_access(block, "A");
+    auto& x = builder.add_access(block, "x");
+    auto& y1 = builder.add_access(block, "y");
+    auto& y2 = builder.add_access(block, "y");
+    auto& libnode =
+        builder.add_library_node<einsum::EinsumNode, const std::vector<std::string>&,
+                                 const std::vector<std::string>&,
+                                 std::vector<std::pair<symbolic::Symbol, symbolic::Expression>>,
+                                 data_flow::Subset, std::vector<data_flow::Subset>>(
+            block, DebugInfo(), {"_out"}, {"_in1", "_in2", "_out"},
+            {{indvar_i, bound_i}, {indvar_j, bound_j}}, {indvar_i},
+            {{indvar_i, indvar_j}, {indvar_j}, {indvar_i}});
+    builder.add_memlet(block, A, "void", libnode, "_in1", {});
+    builder.add_memlet(block, x, "void", libnode, "_in2", {});
+    builder.add_memlet(block, y1, "void", libnode, "_out", {});
+    builder.add_memlet(block, libnode, "_out", y2, "void", {});
+
+    auto sdfg = builder.move();
+
+    codegen::CCodeGenerator generator(*sdfg);
+    ASSERT_TRUE(generator.generate());
+
+    EXPECT_EQ(generator.function_definition(),
+              "extern void sdfg_1(unsigned long long I, unsigned long long J, float **A, float *x, "
+              "float *y)");
+    EXPECT_EQ(generator.main().str(), R"(unsigned long long j;
+unsigned long long i;
+    // Einsum Node
+    {
+        float **_in1 = A;
+        float *_in2 = x;
+
+        for (i = 0; i < I; i++)
+        {
+            float _out = y[i];
+
+            for (j = 0; j < 1 + i; j++)
+            {
+                _out = _out + _in1[i][j] * _in2[j];
+            }
+
+            y[i] = _out;
+        }
+    }
+)");
+}
+
+TEST(EinsumDispatcher, ssymvU) {
+    builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
+
+    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    builder.add_container("i", sym_desc);
+    builder.add_container("I", sym_desc, true);
+    builder.add_container("j", sym_desc);
+    builder.add_container("J", sym_desc, true);
+
+    types::Scalar base_desc(types::PrimitiveType::Float);
+    types::Pointer desc(base_desc);
+    types::Pointer desc2(*desc.clone());
+    builder.add_container("A", desc2, true);
+    builder.add_container("x", desc, true);
+    builder.add_container("y", desc, true);
+
+    auto indvar_j = symbolic::symbol("j");
+    auto bound_j = symbolic::symbol("J");
+    auto indvar_i = symbolic::symbol("i");
+    auto bound_i = symbolic::add(indvar_j, symbolic::one());
+
+    auto& root = builder.subject().root();
+    auto& block = builder.add_block(root);
+    auto& A = builder.add_access(block, "A");
+    auto& x = builder.add_access(block, "x");
+    auto& y1 = builder.add_access(block, "y");
+    auto& y2 = builder.add_access(block, "y");
+    auto& libnode =
+        builder.add_library_node<einsum::EinsumNode, const std::vector<std::string>&,
+                                 const std::vector<std::string>&,
+                                 std::vector<std::pair<symbolic::Symbol, symbolic::Expression>>,
+                                 data_flow::Subset, std::vector<data_flow::Subset>>(
+            block, DebugInfo(), {"_out"}, {"_in1", "_in2", "_out"},
+            {{indvar_i, bound_i}, {indvar_j, bound_j}}, {indvar_i},
+            {{indvar_i, indvar_j}, {indvar_j}, {indvar_i}});
+    builder.add_memlet(block, A, "void", libnode, "_in1", {});
+    builder.add_memlet(block, x, "void", libnode, "_in2", {});
+    builder.add_memlet(block, y1, "void", libnode, "_out", {});
+    builder.add_memlet(block, libnode, "_out", y2, "void", {});
+
+    auto sdfg = builder.move();
+
+    codegen::CCodeGenerator generator(*sdfg);
+    ASSERT_TRUE(generator.generate());
+
+    EXPECT_EQ(generator.function_definition(),
+              "extern void sdfg_1(unsigned long long I, unsigned long long J, float **A, float *x, "
+              "float *y)");
+    EXPECT_EQ(generator.main().str(), R"(unsigned long long j;
+unsigned long long i;
+    // Einsum Node
+    {
+        float **_in1 = A;
+        float *_in2 = x;
+
+        for (j = 0; j < J; j++)
+        {
+            for (i = 0; i < 1 + j; i++)
+            {
+                float _out = y[i];
+
+                _out = _out + _in1[i][j] * _in2[j];
+
+                y[i] = _out;
+            }
+        }
+    }
+)");
+}
