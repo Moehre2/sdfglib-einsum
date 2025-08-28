@@ -1,4 +1,4 @@
-#include "sdfg/blas/blas_dispatcher_gemm.h"
+#include "sdfg/blas/blas_dispatcher_symm.h"
 
 #include <sdfg/codegen/dispatchers/node_dispatcher_registry.h>
 #include <sdfg/codegen/language_extension.h>
@@ -12,18 +12,18 @@
 
 #include <string>
 
-#include "sdfg/blas/blas_node_gemm.h"
+#include "sdfg/blas/blas_node_symm.h"
 
 namespace sdfg {
 namespace blas {
 
-BLASDispatcherGemm::BLASDispatcherGemm(codegen::LanguageExtension& language_extension,
+BLASDispatcherSymm::BLASDispatcherSymm(codegen::LanguageExtension& language_extension,
                                        const Function& function,
                                        const data_flow::DataFlowGraph& data_flow_graph,
                                        const data_flow::LibraryNode& node)
     : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {}
 
-void BLASDispatcherGemm::dispatch(codegen::PrettyPrinter& stream) {
+void BLASDispatcherSymm::dispatch(codegen::PrettyPrinter& stream) {
     stream << "{" << std::endl;
     stream.setIndent(stream.indent() + 4);
 
@@ -41,44 +41,37 @@ void BLASDispatcherGemm::dispatch(codegen::PrettyPrinter& stream) {
     }
     stream << std::endl;
 
-    auto& blas_node = dynamic_cast<const BLASNodeGemm&>(this->node_);
+    auto& blas_node = dynamic_cast<const BLASNodeSymm&>(this->node_);
 
     const std::string m = blas_node.m()->__str__();
     const std::string n = blas_node.n()->__str__();
-    const std::string k = blas_node.k()->__str__();
 
-    stream << "cblas_" << blasType2String(blas_node.type()) << "gemm(CblasRowMajor, ";
-    switch (blas_node.transA()) {
-        case BLASTranspose_No:
-            stream << "CblasNoTrans";
+    stream << "cblas_" << blasType2String(blas_node.type()) << "symm(CblasRowMajor, ";
+    switch (blas_node.side()) {
+        case BLASSide_Left:
+            stream << "CblasLeft";
             break;
-        case BLASTranspose_Transpose:
-            stream << "CblasTrans";
+        case BLASSide_Right:
+            stream << "CblasRight";
             break;
     }
     stream << ", ";
-    switch (blas_node.transB()) {
-        case BLASTranspose_No:
-            stream << "CblasNoTrans";
+    switch (blas_node.uplo()) {
+        case BLASTriangular_Upper:
+            stream << "CblasUpper";
             break;
-        case BLASTranspose_Transpose:
-            stream << "CblasTrans";
+        case BLASTriangular_Lower:
+            stream << "CblasLower";
             break;
     }
-    stream << ", " << m << ", " << n << ", " << k << ", " << blas_node.alpha() << ", "
-           << blas_node.A() << ", ";
-    if (blas_node.transA() == BLASTranspose_No)
-        stream << k;
-    else
+    stream << ", " << m << ", " << n << ", " << blas_node.alpha() << ", " << blas_node.A() << ", ";
+    if (blas_node.side() == BLASSide_Left)
         stream << m;
-    stream << ", " << blas_node.B() << ", ";
-    if (blas_node.transB() == BLASTranspose_No)
-        stream << n;
     else
-        stream << k;
-    stream << ", 1.0";
+        stream << n;
+    stream << ", " << blas_node.B() << ", " << m << ", 1.0";
     if (blas_node.type() == BLASType_real) stream << "f";
-    stream << ", " << blas_node.C() << ", " << n << ");" << std::endl;
+    stream << ", " << blas_node.C() << ", " << m << ");" << std::endl;
 
     stream.setIndent(stream.indent() - 4);
     stream << "}" << std::endl;

@@ -101,7 +101,7 @@ void Einsum2BLASGemm::apply(builder::StructuredSDFGBuilder& builder,
     //           symbolic::eq(this->einsum_node_.in_index(1, 1), j));
 
     // Get the block in which the einsum node lives
-    auto* block =
+    /*auto* block =
         dynamic_cast<structured_control_flow::Block*>(this->einsum_node_.get_parent().get_parent());
 
     // Add the BLAS node
@@ -133,7 +133,7 @@ void Einsum2BLASGemm::apply(builder::StructuredSDFGBuilder& builder,
     }
 
     // Remove the einsum node
-    builder.remove_node(*block, this->einsum_node_);
+    builder.remove_node(*block, this->einsum_node_);*/
 
     analysis_manager.invalidate_all();
 }

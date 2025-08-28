@@ -20,18 +20,20 @@ namespace blas {
 
 BLASNodeGemm::BLASNodeGemm(size_t element_id, const DebugInfo& debug_info,
                            const graph::Vertex vertex, data_flow::DataFlowGraph& parent,
-                           const std::vector<std::string>& outputs,
-                           const std::vector<std::string>& inputs, const BLASType type,
-                           symbolic::Expression m, symbolic::Expression n, symbolic::Expression k)
-    : BLASNode(element_id, debug_info, vertex, parent, LibraryNodeType_BLAS_gemm, outputs, inputs,
-               type),
+                           const BLASType type, BLASTranspose transA, BLASTranspose transB,
+                           symbolic::Expression m, symbolic::Expression n, symbolic::Expression k,
+                           std::string alpha, std::string A, std::string B, std::string C)
+    : BLASNode(element_id, debug_info, vertex, parent, LibraryNodeType_BLAS_gemm, {C},
+               {alpha, A, B, C}, type),
+      transA_(transA),
+      transB_(transB),
       m_(m),
       n_(n),
-      k_(k) {
-    if (inputs.size() != 3) {
-        throw InvalidSDFGException("Currently BLAS node can only have exactly three inputs");
-    }
-}
+      k_(k) {}
+
+BLASTranspose BLASNodeGemm::transA() const { return this->transA_; }
+
+BLASTranspose BLASNodeGemm::transB() const { return this->transB_; }
 
 symbolic::Expression BLASNodeGemm::m() const { return this->m_; }
 
@@ -39,26 +41,41 @@ symbolic::Expression BLASNodeGemm::n() const { return this->n_; }
 
 symbolic::Expression BLASNodeGemm::k() const { return this->k_; }
 
+std::string BLASNodeGemm::alpha() const { return this->input(0); }
+
+std::string BLASNodeGemm::A() const { return this->input(1); }
+
+std::string BLASNodeGemm::B() const { return this->input(2); }
+
+std::string BLASNodeGemm::C() const { return this->input(3); }
+
 std::unique_ptr<data_flow::DataFlowNode> BLASNodeGemm::clone(
     size_t element_id, const graph::Vertex vertex, data_flow::DataFlowGraph& parent) const {
     return std::make_unique<BLASNodeGemm>(element_id, this->debug_info(), vertex, parent,
-                                          this->outputs(), this->inputs(), this->type(), this->n(),
-                                          this->m(), this->k());
+                                          this->type(), this->transA(), this->transB(), this->m(),
+                                          this->n(), this->k(), this->alpha(), this->A(), this->B(),
+                                          this->C());
 }
 
 std::string BLASNodeGemm::toStr() const {
-    if (this->code().value() == LibraryNodeType_BLAS_gemm.value()) {
-        std::stringstream stream;
+    std::stringstream stream;
 
-        stream << this->output(0) << " = " << blasType2String(this->type()) << "gemm('N', 'N', "
-               << this->m()->__str__() << ", " << this->n()->__str__() << ", "
-               << this->k()->__str__() << ", 1, " << this->input(0) << ", " << this->m()->__str__()
-               << ", " << this->input(1) << ", " << this->k()->__str__() << ", 1, "
-               << this->input(2) << ", " << this->m()->__str__() << ")";
+    stream << blasType2String(this->type()) << "gemm(" << blasTranspose2String(this->transA())
+           << ", " << blasTranspose2String(this->transB()) << ", " << this->m()->__str__() << ", "
+           << this->n()->__str__() << ", " << this->k()->__str__() << ", " << this->alpha() << ", "
+           << this->A() << ", ";
+    if (this->transA() == BLASTranspose_No)
+        stream << this->k()->__str__();
+    else
+        stream << this->m()->__str__();
+    stream << ", " << this->B() << ", ";
+    if (this->transB() == BLASTranspose_No)
+        stream << this->n()->__str__();
+    else
+        stream << this->k()->__str__();
+    stream << ", 1.0, " << this->C() << ", " << this->n()->__str__() << ")";
 
-        return stream.str();
-    }
-    return this->code().value();
+    return stream.str();
 }
 
 }  // namespace blas

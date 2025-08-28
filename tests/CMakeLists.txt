@@ -10,12 +10,23 @@ set(TEST_FILES
     blas/blas_dispatcher_axpy_test.cpp
     blas/blas_dispatcher_copy_test.cpp
     blas/blas_dispatcher_dot_test.cpp
+    blas/blas_dispatcher_gemm_test.cpp
     blas/blas_dispatcher_gemv_test.cpp
-    blas/blas_dispatcher_test.cpp
+    blas/blas_dispatcher_ger_test.cpp
+    blas/blas_dispatcher_symm_test.cpp
+    blas/blas_dispatcher_symv_test.cpp
+    blas/blas_dispatcher_syr_test.cpp
+    blas/blas_dispatcher_syrk_test.cpp
     blas/blas_node_axpy_test.cpp
     blas/blas_node_copy_test.cpp
     blas/blas_node_dot_test.cpp
+    blas/blas_node_gemm_test.cpp
     blas/blas_node_gemv_test.cpp
+    blas/blas_node_ger_test.cpp
+    blas/blas_node_symm_test.cpp
+    blas/blas_node_symv_test.cpp
+    blas/blas_node_syr_test.cpp
+    blas/blas_node_syrk_test.cpp
     einsum/einsum_dispatcher_test.cpp
     einsum/einsum_node_test.cpp
     transformations/einsum_expand_fail_test.cpp

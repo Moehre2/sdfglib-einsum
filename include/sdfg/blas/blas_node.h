@@ -35,6 +35,28 @@ constexpr const char* blasTranspose2String(const BLASTranspose transpose) {
     }
 }
 
+enum BLASTriangular { BLASTriangular_Upper, BLASTriangular_Lower };
+
+constexpr const char* blasTriangular2String(const BLASTriangular triangular) {
+    switch (triangular) {
+        case BLASTriangular_Upper:
+            return "'U'";
+        case BLASTriangular_Lower:
+            return "'L'";
+    }
+}
+
+enum BLASSide { BLASSide_Left, BLASSide_Right };
+
+constexpr const char* blasSide2String(const BLASSide side) {
+    switch (side) {
+        case BLASSide_Left:
+            return "'L'";
+        case BLASSide_Right:
+            return "'R'";
+    }
+}
+
 class BLASNode : public data_flow::LibraryNode {
     BLASType type_;
 

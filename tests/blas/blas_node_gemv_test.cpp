@@ -52,7 +52,7 @@ TEST(BLASNodeGemv, sgemvN) {
     auto* blas_node = dynamic_cast<blas::BLASNodeGemv*>(&libnode);
     ASSERT_TRUE(blas_node);
 
-    EXPECT_EQ(blas_node->toStr(), "sgemv('N', m, n, _alpha, _A, m, _x, 1, 1.0, _y, 1)");
+    EXPECT_EQ(blas_node->toStr(), "sgemv('N', m, n, _alpha, _A, n, _x, 1, 1.0, _y, 1)");
 }
 
 TEST(BLASNodeGemv, sgemvT) {
@@ -93,7 +93,7 @@ TEST(BLASNodeGemv, sgemvT) {
     auto* blas_node = dynamic_cast<blas::BLASNodeGemv*>(&libnode);
     ASSERT_TRUE(blas_node);
 
-    EXPECT_EQ(blas_node->toStr(), "sgemv('T', m, n, _alpha, _A, m, _x, 1, 1.0, _y, 1)");
+    EXPECT_EQ(blas_node->toStr(), "sgemv('T', m, n, _alpha, _A, n, _x, 1, 1.0, _y, 1)");
 }
 
 TEST(BLASNodeGemv, dgemvN) {
@@ -134,7 +134,7 @@ TEST(BLASNodeGemv, dgemvN) {
     auto* blas_node = dynamic_cast<blas::BLASNodeGemv*>(&libnode);
     ASSERT_TRUE(blas_node);
 
-    EXPECT_EQ(blas_node->toStr(), "dgemv('N', m, n, _alpha, _A, m, _x, 1, 1.0, _y, 1)");
+    EXPECT_EQ(blas_node->toStr(), "dgemv('N', m, n, _alpha, _A, n, _x, 1, 1.0, _y, 1)");
 }
 
 TEST(BLASNodeGemv, dgemvT) {
@@ -175,5 +175,5 @@ TEST(BLASNodeGemv, dgemvT) {
     auto* blas_node = dynamic_cast<blas::BLASNodeGemv*>(&libnode);
     ASSERT_TRUE(blas_node);
 
-    EXPECT_EQ(blas_node->toStr(), "dgemv('T', m, n, _alpha, _A, m, _x, 1, 1.0, _y, 1)");
+    EXPECT_EQ(blas_node->toStr(), "dgemv('T', m, n, _alpha, _A, n, _x, 1, 1.0, _y, 1)");
 }
