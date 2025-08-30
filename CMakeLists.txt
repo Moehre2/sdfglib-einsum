@@ -45,6 +45,7 @@ set(SOURCE_FILES
     src/transformations/einsum2blas_gemv.cpp
     src/transformations/einsum2blas_ger.cpp
     src/transformations/einsum2blas_symv.cpp
+    src/transformations/einsum2blas_syr.cpp
     src/transformations/einsum2blas.cpp
 )
 
