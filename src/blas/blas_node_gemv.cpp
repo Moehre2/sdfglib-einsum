@@ -53,7 +53,7 @@ std::string BLASNodeGemv::toStr() const {
 
     stream << blasType2String(this->type()) << "gemv(" << blasTranspose2String(this->trans())
            << ", " << this->m()->__str__() << ", " << this->n()->__str__() << ", " << this->alpha()
-           << ", " << this->A() << ", " << this->m()->__str__() << ", " << this->x() << ", 1, 1.0, "
+           << ", " << this->A() << ", " << this->n()->__str__() << ", " << this->x() << ", 1, 1.0, "
            << this->y() << ", 1)";
 
     return stream.str();

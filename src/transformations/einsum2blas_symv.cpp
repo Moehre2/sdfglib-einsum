@@ -1,11 +1,10 @@
-#include "sdfg/transformations/einsum2blas_gemv.h"
+#include "sdfg/transformations/einsum2blas_symv.h"
 
 #include <sdfg/analysis/analysis.h>
 #include <sdfg/builder/structured_sdfg_builder.h>
 #include <sdfg/data_flow/access_node.h>
 #include <sdfg/data_flow/library_node.h>
 #include <sdfg/element.h>
-#include <sdfg/structured_control_flow/block.h>
 #include <sdfg/symbolic/symbolic.h>
 #include <sdfg/transformations/transformation.h>
 #include <sdfg/types/type.h>
@@ -14,39 +13,62 @@
 #include <cstddef>
 #include <nlohmann/json_fwd.hpp>
 #include <string>
-#include <vector>
 
 #include "sdfg/blas/blas_node.h"
-#include "sdfg/blas/blas_node_gemv.h"
+#include "sdfg/blas/blas_node_symv.h"
 #include "sdfg/einsum/einsum_node.h"
 
 namespace sdfg {
 namespace transformations {
 
-bool Einsum2BLASGemv::check_matrix_indices(const symbolic::Expression& mat_index1,
-                                           const symbolic::Expression& mat_index2,
-                                           const symbolic::Symbol& loop_index1,
-                                           const symbolic::Symbol& loop_index2) {
-    if (symbolic::eq(mat_index1, mat_index2)) return false;
-    if (!symbolic::eq(mat_index1, loop_index1) && !symbolic::eq(mat_index1, loop_index2))
+bool Einsum2BLASSymv::check_L() {
+    // Maps: (i, n), (j, i+1)
+    if (symbolic::eq(this->einsum_node_.out_index(0), this->einsum_node_.indvar(0)) &&
+        symbolic::eq(this->einsum_node_.num_iteration(1),
+                     symbolic::add(this->einsum_node_.indvar(0), symbolic::one())))
+        return true;
+    // Maps: (j, i+1), (i, n)
+    else if (symbolic::eq(this->einsum_node_.out_index(0), this->einsum_node_.indvar(1)) &&
+             symbolic::eq(this->einsum_node_.num_iteration(0),
+                          symbolic::add(this->einsum_node_.indvar(1), symbolic::one())))
+        return true;
+    else
         return false;
-    if (!symbolic::eq(mat_index2, loop_index1) && !symbolic::eq(mat_index2, loop_index2))
-        return false;
-    return true;
 }
 
-Einsum2BLASGemv::Einsum2BLASGemv(einsum::EinsumNode& einsum_node) : einsum_node_(einsum_node) {}
+bool Einsum2BLASSymv::check_U() {
+    // Maps: (i, j+1), (j, n)
+    if (symbolic::eq(this->einsum_node_.out_index(0), this->einsum_node_.indvar(0)) &&
+        symbolic::eq(this->einsum_node_.num_iteration(0),
+                     symbolic::add(this->einsum_node_.indvar(1), symbolic::one())))
+        return true;
+    // Maps: (j, n), (i, j+1)
+    else if (symbolic::eq(this->einsum_node_.out_index(0), this->einsum_node_.indvar(1)) &&
+             symbolic::eq(this->einsum_node_.num_iteration(1),
+                          symbolic::add(this->einsum_node_.indvar(0), symbolic::one())))
+        return true;
+    else
+        return false;
+}
 
-std::string Einsum2BLASGemv::name() const { return "Einsum2BLASGemv"; }
+Einsum2BLASSymv::Einsum2BLASSymv(einsum::EinsumNode& einsum_node) : einsum_node_(einsum_node) {}
 
-bool Einsum2BLASGemv::can_be_applied(builder::StructuredSDFGBuilder& builder,
+std::string Einsum2BLASSymv::name() const { return "Einsum2BLASSymv"; }
+
+bool Einsum2BLASSymv::can_be_applied(builder::StructuredSDFGBuilder& builder,
                                      analysis::AnalysisManager& analysis_manager) {
     // Check maps
     if (this->einsum_node_.maps().size() != 2) return false;
 
+    // Check out indices size
+    if (this->einsum_node_.out_indices().size() != 1) return false;
+
+    // Check triangular
+    // Exactly one must be true
+    if (this->check_L() + this->check_U() != 1) return false;
+
     // Check out indices
     symbolic::Symbol indvar_outer, indvar_inner;
-    if (this->einsum_node_.out_indices().size() != 1) return false;
     if (symbolic::eq(this->einsum_node_.out_index(0), this->einsum_node_.indvar(0))) {
         indvar_outer = this->einsum_node_.indvar(0);
         indvar_inner = this->einsum_node_.indvar(1);
@@ -56,12 +78,6 @@ bool Einsum2BLASGemv::can_be_applied(builder::StructuredSDFGBuilder& builder,
     } else {
         return false;
     }
-
-    // Check bounds
-    if (symbolic::uses(this->einsum_node_.num_iteration(0), indvar_outer)) return false;
-    if (symbolic::uses(this->einsum_node_.num_iteration(0), indvar_inner)) return false;
-    if (symbolic::uses(this->einsum_node_.num_iteration(1), indvar_outer)) return false;
-    if (symbolic::uses(this->einsum_node_.num_iteration(1), indvar_inner)) return false;
 
     // Check inputs
     long long A = -1, x = -1, y = -1;
@@ -105,10 +121,8 @@ bool Einsum2BLASGemv::can_be_applied(builder::StructuredSDFGBuilder& builder,
 
     // Check in indices
     if (this->einsum_node_.in_indices(A).size() != 2) return false;
-    if (!this->check_matrix_indices(this->einsum_node_.in_index(A, 0),
-                                    this->einsum_node_.in_index(A, 1), indvar_outer, indvar_inner))
-        return false;
-    // bool trans = symbolic::eq(this->einsum_node_.in_index(A, 0), indvar_inner);
+    if (!symbolic::eq(this->einsum_node_.in_index(A, 0), indvar_outer)) return false;
+    if (!symbolic::eq(this->einsum_node_.in_index(A, 1), indvar_inner)) return false;
 
     if (this->einsum_node_.in_indices(x).size() != 1) return false;
     if (!symbolic::eq(this->einsum_node_.in_index(x, 0), indvar_inner)) return false;
@@ -140,7 +154,7 @@ bool Einsum2BLASGemv::can_be_applied(builder::StructuredSDFGBuilder& builder,
     return true;
 }
 
-void Einsum2BLASGemv::apply(builder::StructuredSDFGBuilder& builder,
+void Einsum2BLASSymv::apply(builder::StructuredSDFGBuilder& builder,
                             analysis::AnalysisManager& analysis_manager) {
     // Get the data flow graph
     auto& dfg = this->einsum_node_.get_parent();
@@ -195,37 +209,33 @@ void Einsum2BLASGemv::apply(builder::StructuredSDFGBuilder& builder,
         }
     }
 
-    // Determine m and n and if matrix is accessed in a transposed manner
-    size_t outer, inner;
-    if (symbolic::eq(this->einsum_node_.out_index(0), this->einsum_node_.indvar(0))) {
-        outer = 0;
-        inner = 1;
+    // Determine triangular side and n
+    blas::BLASTriangular uplo;
+    symbolic::Expression n;
+    if (this->check_L()) {
+        uplo = blas::BLASTriangular_Lower;
+        if (symbolic::eq(this->einsum_node_.in_index(A, 0), this->einsum_node_.indvar(0)))
+            n = this->einsum_node_.num_iteration(0);
+        else
+            n = this->einsum_node_.num_iteration(1);
     } else {
-        outer = 1;
-        inner = 0;
-    }
-    symbolic::Expression m, n;
-    blas::BLASTranspose trans;
-    if (symbolic::eq(this->einsum_node_.in_index(A, 0), this->einsum_node_.out_index(0))) {
-        m = this->einsum_node_.num_iteration(outer);
-        n = this->einsum_node_.num_iteration(inner);
-        trans = blas::BLASTranspose_No;
-    } else {
-        m = this->einsum_node_.num_iteration(inner);
-        n = this->einsum_node_.num_iteration(outer);
-        trans = blas::BLASTranspose_Transpose;
+        uplo = blas::BLASTriangular_Upper;
+        if (symbolic::eq(this->einsum_node_.in_index(A, 0), this->einsum_node_.indvar(0)))
+            n = this->einsum_node_.num_iteration(1);
+        else
+            n = this->einsum_node_.num_iteration(0);
     }
 
     // Determine alpha
     std::string alpha_input = has_alpha ? this->einsum_node_.input(alpha)
                                         : ((type == blas::BLASType_real) ? "1.0f" : "1.0");
 
-    // Add the BLAS node for gemv
+    // Add the BLAS node for symv
     data_flow::LibraryNode& libnode =
-        builder.add_library_node<blas::BLASNodeGemv, const blas::BLASType, blas::BLASTranspose,
-                                 symbolic::Expression, symbolic::Expression, std::string,
-                                 std::string, std::string, std::string>(
-            *block, this->einsum_node_.debug_info(), type, trans, m, n, alpha_input,
+        builder.add_library_node<blas::BLASNodeSymv, const blas::BLASType, blas::BLASTriangular,
+                                 symbolic::Expression, std::string, std::string, std::string,
+                                 std::string>(
+            *block, this->einsum_node_.debug_info(), type, uplo, n, alpha_input,
             this->einsum_node_.input(A), this->einsum_node_.input(x), this->einsum_node_.input(y));
 
     // Copy the memlets
@@ -252,12 +262,12 @@ void Einsum2BLASGemv::apply(builder::StructuredSDFGBuilder& builder,
     analysis_manager.invalidate_all();
 }
 
-void Einsum2BLASGemv::to_json(nlohmann::json& j) const {
+void Einsum2BLASSymv::to_json(nlohmann::json& j) const {
     j["transformation_type"] = this->name();
     j["einsum_node_id"] = this->einsum_node_.element_id();
 }
 
-Einsum2BLASGemv Einsum2BLASGemv::from_json(builder::StructuredSDFGBuilder& builder,
+Einsum2BLASSymv Einsum2BLASSymv::from_json(builder::StructuredSDFGBuilder& builder,
                                            const nlohmann::json& j) {
     size_t einsum_node_id = j["einsum_node_id"].get<size_t>();
     Element* einsum_node_element = builder.find_element_by_id(einsum_node_id);
@@ -267,7 +277,7 @@ Einsum2BLASGemv Einsum2BLASGemv::from_json(builder::StructuredSDFGBuilder& build
     }
     auto* einsum_node = dynamic_cast<einsum::EinsumNode*>(einsum_node_element);
 
-    return Einsum2BLASGemv(*einsum_node);
+    return Einsum2BLASSymv(*einsum_node);
 }
 
 }  // namespace transformations

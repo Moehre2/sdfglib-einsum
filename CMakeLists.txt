@@ -17,11 +17,21 @@ set(SOURCE_FILES
     src/blas/blas_dispatcher_dot.cpp
     src/blas/blas_dispatcher_gemm.cpp
     src/blas/blas_dispatcher_gemv.cpp
+    src/blas/blas_dispatcher_ger.cpp
+    src/blas/blas_dispatcher_symm.cpp
+    src/blas/blas_dispatcher_symv.cpp
+    src/blas/blas_dispatcher_syr.cpp
+    src/blas/blas_dispatcher_syrk.cpp
     src/blas/blas_node_axpy.cpp
     src/blas/blas_node_copy.cpp
     src/blas/blas_node_dot.cpp
     src/blas/blas_node_gemm.cpp
     src/blas/blas_node_gemv.cpp
+    src/blas/blas_node_ger.cpp
+    src/blas/blas_node_symm.cpp
+    src/blas/blas_node_symv.cpp
+    src/blas/blas_node_syr.cpp
+    src/blas/blas_node_syrk.cpp
     src/blas/blas_node.cpp
     src/einsum/einsum_dispatcher.cpp
     src/einsum/einsum_node.cpp
@@ -33,6 +43,11 @@ set(SOURCE_FILES
     src/transformations/einsum2blas_dot.cpp
     src/transformations/einsum2blas_gemm.cpp
     src/transformations/einsum2blas_gemv.cpp
+    src/transformations/einsum2blas_ger.cpp
+    src/transformations/einsum2blas_symm.cpp
+    src/transformations/einsum2blas_symv.cpp
+    src/transformations/einsum2blas_syr.cpp
+    src/transformations/einsum2blas_syrk.cpp
     src/transformations/einsum2blas.cpp
 )
 

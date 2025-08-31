@@ -14,17 +14,16 @@
 namespace sdfg {
 namespace transformations {
 
-class Einsum2BLASGemm : public Transformation {
+class Einsum2BLASSymm : public Transformation {
     einsum::EinsumNode& einsum_node_;
 
-    bool check_indvars(size_t indvar1, size_t indvar2);
-    bool check_matrix_indices(const symbolic::Expression& mat_index1,
-                              const symbolic::Expression& mat_index2,
-                              const symbolic::Symbol& loop_index1,
-                              const symbolic::Symbol& loop_index2);
+    bool check_left_lower(size_t outer_1, size_t outer_2, size_t inner);
+    bool check_left_upper(size_t outer_1, size_t outer_2, size_t inner);
+    bool check_right_lower(size_t outer_1, size_t outer_2, size_t inner);
+    bool check_right_upper(size_t outer_1, size_t outer_2, size_t inner);
 
    public:
-    Einsum2BLASGemm(einsum::EinsumNode& einsum_node);
+    Einsum2BLASSymm(einsum::EinsumNode& einsum_node);
 
     virtual std::string name() const override;
 
@@ -36,7 +35,7 @@ class Einsum2BLASGemm : public Transformation {
 
     virtual void to_json(nlohmann::json& j) const override;
 
-    static Einsum2BLASGemm from_json(builder::StructuredSDFGBuilder& builder,
+    static Einsum2BLASSymm from_json(builder::StructuredSDFGBuilder& builder,
                                      const nlohmann::json& j);
 };
 

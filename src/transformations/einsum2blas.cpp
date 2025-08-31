@@ -18,7 +18,13 @@ Einsum2BLAS::Einsum2BLAS(einsum::EinsumNode& einsum_node)
       axpy_(einsum_node),
       copy_(einsum_node),
       dot_(einsum_node),
-      gemv_(einsum_node) {}
+      gemv_(einsum_node),
+      symv_(einsum_node),
+      ger_(einsum_node),
+      syr_(einsum_node),
+      gemm_(einsum_node),
+      symm_(einsum_node),
+      syrk_(einsum_node) {}
 
 std::string Einsum2BLAS::name() const { return "Einsum2BLAS"; }
 
@@ -28,6 +34,12 @@ bool Einsum2BLAS::can_be_applied(builder::StructuredSDFGBuilder& builder,
     if (this->copy_.can_be_applied(builder, analysis_manager)) return true;
     if (this->dot_.can_be_applied(builder, analysis_manager)) return true;
     if (this->gemv_.can_be_applied(builder, analysis_manager)) return true;
+    if (this->symv_.can_be_applied(builder, analysis_manager)) return true;
+    if (this->ger_.can_be_applied(builder, analysis_manager)) return true;
+    if (this->syr_.can_be_applied(builder, analysis_manager)) return true;
+    if (this->gemm_.can_be_applied(builder, analysis_manager)) return true;
+    if (this->symm_.can_be_applied(builder, analysis_manager)) return true;
+    if (this->syrk_.can_be_applied(builder, analysis_manager)) return true;
     return false;
 }
 
@@ -47,6 +59,30 @@ void Einsum2BLAS::apply(builder::StructuredSDFGBuilder& builder,
     }
     if (this->gemv_.can_be_applied(builder, analysis_manager)) {
         this->gemv_.apply(builder, analysis_manager);
+        return;
+    }
+    if (this->symv_.can_be_applied(builder, analysis_manager)) {
+        this->symv_.apply(builder, analysis_manager);
+        return;
+    }
+    if (this->ger_.can_be_applied(builder, analysis_manager)) {
+        this->ger_.apply(builder, analysis_manager);
+        return;
+    }
+    if (this->syr_.can_be_applied(builder, analysis_manager)) {
+        this->syr_.apply(builder, analysis_manager);
+        return;
+    }
+    if (this->gemm_.can_be_applied(builder, analysis_manager)) {
+        this->gemm_.apply(builder, analysis_manager);
+        return;
+    }
+    if (this->symm_.can_be_applied(builder, analysis_manager)) {
+        this->symm_.apply(builder, analysis_manager);
+        return;
+    }
+    if (this->syrk_.can_be_applied(builder, analysis_manager)) {
+        this->syrk_.apply(builder, analysis_manager);
         return;
     }
 }

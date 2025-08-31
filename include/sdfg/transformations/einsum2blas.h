@@ -11,7 +11,13 @@
 #include "sdfg/transformations/einsum2blas_axpy.h"
 #include "sdfg/transformations/einsum2blas_copy.h"
 #include "sdfg/transformations/einsum2blas_dot.h"
+#include "sdfg/transformations/einsum2blas_gemm.h"
 #include "sdfg/transformations/einsum2blas_gemv.h"
+#include "sdfg/transformations/einsum2blas_ger.h"
+#include "sdfg/transformations/einsum2blas_symm.h"
+#include "sdfg/transformations/einsum2blas_symv.h"
+#include "sdfg/transformations/einsum2blas_syr.h"
+#include "sdfg/transformations/einsum2blas_syrk.h"
 
 namespace sdfg {
 namespace transformations {
@@ -22,6 +28,12 @@ class Einsum2BLAS : public Transformation {
     Einsum2BLASCopy copy_;
     Einsum2BLASDot dot_;
     Einsum2BLASGemv gemv_;
+    Einsum2BLASSymv symv_;
+    Einsum2BLASGer ger_;
+    Einsum2BLASSyr syr_;
+    Einsum2BLASGemm gemm_;
+    Einsum2BLASSymm symm_;
+    Einsum2BLASSyrk syrk_;
 
    public:
     Einsum2BLAS(einsum::EinsumNode& einsum_node);
