@@ -17,6 +17,7 @@
 #include "sdfg/transformations/einsum2blas_symm.h"
 #include "sdfg/transformations/einsum2blas_symv.h"
 #include "sdfg/transformations/einsum2blas_syr.h"
+#include "sdfg/transformations/einsum2blas_syrk.h"
 
 namespace sdfg {
 namespace transformations {
@@ -32,6 +33,7 @@ class Einsum2BLAS : public Transformation {
     Einsum2BLASSyr syr_;
     Einsum2BLASGemm gemm_;
     Einsum2BLASSymm symm_;
+    Einsum2BLASSyrk syrk_;
 
    public:
     Einsum2BLAS(einsum::EinsumNode& einsum_node);
