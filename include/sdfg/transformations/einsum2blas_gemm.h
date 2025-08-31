@@ -2,8 +2,10 @@
 
 #include <sdfg/analysis/analysis.h>
 #include <sdfg/builder/structured_sdfg_builder.h>
+#include <sdfg/symbolic/symbolic.h>
 #include <sdfg/transformations/transformation.h>
 
+#include <cstddef>
 #include <nlohmann/json_fwd.hpp>
 #include <string>
 
@@ -14,6 +16,12 @@ namespace transformations {
 
 class Einsum2BLASGemm : public Transformation {
     einsum::EinsumNode& einsum_node_;
+
+    bool check_indvars(size_t indvar1, size_t indvar2);
+    bool check_matrix_indices(const symbolic::Expression& mat_index1,
+                              const symbolic::Expression& mat_index2,
+                              const symbolic::Symbol& loop_index1,
+                              const symbolic::Symbol& loop_index2);
 
    public:
     Einsum2BLASGemm(einsum::EinsumNode& einsum_node);

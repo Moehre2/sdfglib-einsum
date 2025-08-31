@@ -57,6 +57,12 @@ bool Einsum2BLASGemv::can_be_applied(builder::StructuredSDFGBuilder& builder,
         return false;
     }
 
+    // Check bounds
+    if (symbolic::uses(this->einsum_node_.num_iteration(0), indvar_outer)) return false;
+    if (symbolic::uses(this->einsum_node_.num_iteration(0), indvar_inner)) return false;
+    if (symbolic::uses(this->einsum_node_.num_iteration(1), indvar_outer)) return false;
+    if (symbolic::uses(this->einsum_node_.num_iteration(1), indvar_inner)) return false;
+
     // Check inputs
     long long A = -1, x = -1, y = -1;
     if (this->einsum_node_.inputs().size() == 3) {
