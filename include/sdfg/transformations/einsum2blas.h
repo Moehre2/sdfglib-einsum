@@ -14,6 +14,7 @@
 #include "sdfg/transformations/einsum2blas_gemm.h"
 #include "sdfg/transformations/einsum2blas_gemv.h"
 #include "sdfg/transformations/einsum2blas_ger.h"
+#include "sdfg/transformations/einsum2blas_symm.h"
 #include "sdfg/transformations/einsum2blas_symv.h"
 #include "sdfg/transformations/einsum2blas_syr.h"
 
@@ -30,6 +31,7 @@ class Einsum2BLAS : public Transformation {
     Einsum2BLASGer ger_;
     Einsum2BLASSyr syr_;
     Einsum2BLASGemm gemm_;
+    Einsum2BLASSymm symm_;
 
    public:
     Einsum2BLAS(einsum::EinsumNode& einsum_node);

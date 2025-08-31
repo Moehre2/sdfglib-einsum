@@ -39,6 +39,7 @@ set(TEST_FILES
     transformations/einsum2blas_gemm_test.cpp
     transformations/einsum2blas_gemv_test.cpp
     transformations/einsum2blas_ger_test.cpp
+    transformations/einsum2blas_symm_test.cpp
     transformations/einsum2blas_symv_test.cpp
     transformations/einsum2blas_syr_test.cpp
     test.cpp
