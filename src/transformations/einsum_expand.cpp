@@ -175,6 +175,10 @@ bool EinsumExpand::can_be_applied(builder::StructuredSDFGBuilder& builder,
     for (auto& iedge : block_einsum->dataflow().in_edges(this->einsum_node_)) {
         auto& src = dynamic_cast<const data_flow::AccessNode&>(iedge.src());
         in_containers.insert({iedge.dst_conn(), src.data()});
+        if (block_einsum->dataflow().in_degree(src) == 0) {
+            elements_before_einsum.erase(iedge.element_id());
+            elements_before_einsum.erase(src.element_id());
+        }
     }
 
     // Create a map from each output connector to its output container of the einsum node
@@ -182,6 +186,10 @@ bool EinsumExpand::can_be_applied(builder::StructuredSDFGBuilder& builder,
     for (auto& oedge : block_einsum->dataflow().out_edges(this->einsum_node_)) {
         auto& dst = dynamic_cast<const data_flow::AccessNode&>(oedge.dst());
         out_containers.insert({oedge.src_conn(), dst.data()});
+        if (block_einsum->dataflow().out_degree(dst) == 0) {
+            elements_after_einsum.erase(oedge.element_id());
+            elements_after_einsum.erase(dst.element_id());
+        }
     }
 
     // Check if all occurrences of the output container in the inputs have the index variable of the
