@@ -25,6 +25,7 @@ class EinsumLift : public Transformation {
                                           const std::vector<symbolic::Expression>& args);
     std::string createAccessExpr(const std::string& container, const data_flow::Subset& subset);
     bool checkMulExpr(const symbolic::Expression expr);
+    bool containsNegation(const symbolic::Expression& expr);
 
    public:
     EinsumLift(std::vector<std::reference_wrapper<structured_control_flow::StructuredLoop>> loops,

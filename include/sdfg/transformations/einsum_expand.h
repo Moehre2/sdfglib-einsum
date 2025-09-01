@@ -2,6 +2,7 @@
 
 #include <sdfg/analysis/analysis.h>
 #include <sdfg/builder/structured_sdfg_builder.h>
+#include <sdfg/data_flow/memlet.h>
 #include <sdfg/structured_control_flow/control_flow_node.h>
 #include <sdfg/structured_control_flow/structured_loop.h>
 #include <sdfg/symbolic/symbolic.h>
@@ -10,6 +11,7 @@
 #include <nlohmann/json_fwd.hpp>
 #include <set>
 #include <string>
+#include <vector>
 
 #include "sdfg/einsum/einsum_node.h"
 
@@ -23,6 +25,8 @@ class EinsumExpand : public Transformation {
     void visitElements(std::set<size_t>& elements,
                        const structured_control_flow::ControlFlowNode& node);
     bool subsetContainsSymbol(const data_flow::Subset& subset, const symbolic::Symbol& symbol);
+    bool subsetsMatch(const std::vector<data_flow::Subset>& subsets,
+                      const data_flow::Subset& expected);
 
    public:
     EinsumExpand(structured_control_flow::StructuredLoop& loop, einsum::EinsumNode& einsum_node);

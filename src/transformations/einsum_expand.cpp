@@ -16,6 +16,7 @@
 #include <sdfg/transformations/transformation.h>
 #include <symengine/basic.h>
 
+#include <cstddef>
 #include <nlohmann/json_fwd.hpp>
 #include <set>
 #include <string>
@@ -55,6 +56,17 @@ bool EinsumExpand::subsetContainsSymbol(const data_flow::Subset& subset,
         if (symbolic::uses(expr, symbol)) return true;
     }
     return false;
+}
+
+bool EinsumExpand::subsetsMatch(const std::vector<data_flow::Subset>& subsets,
+                                const data_flow::Subset& expected) {
+    for (auto& subset : subsets) {
+        if (subset.size() != expected.size()) return false;
+        for (size_t i = 0; i < subset.size(); ++i) {
+            if (!symbolic::eq(subset[i], expected[i])) return false;
+        }
+    }
+    return true;
 }
 
 EinsumExpand::EinsumExpand(structured_control_flow::StructuredLoop& loop,
@@ -172,6 +184,18 @@ bool EinsumExpand::can_be_applied(builder::StructuredSDFGBuilder& builder,
         out_containers.insert({oedge.src_conn(), dst.data()});
     }
 
+    // Check if all occurrences of the output container in the inputs have the index variable of the
+    // loop in their subset
+    // E.g., disallow x[i] += ... * x[j] where i is the index variable of the loop
+    for (size_t i = 0; i < this->einsum_node_.inputs().size(); ++i) {
+        if (!in_containers.contains(this->einsum_node_.input(i))) continue;
+        if (in_containers.at(this->einsum_node_.input(i)) !=
+            out_containers.at(this->einsum_node_.output(0)))
+            continue;
+        if (!this->subsetContainsSymbol(this->einsum_node_.in_indices(i), this->loop_.indvar()))
+            return false;
+    }
+
     // Perform a user analysis
     auto& users = analysis_manager.get<analysis::Users>();
     users.run(analysis_manager);
@@ -183,7 +207,9 @@ bool EinsumExpand::can_be_applied(builder::StructuredSDFGBuilder& builder,
         for (auto* user : users.uses(in_containers.at(this->einsum_node_.input(i)))) {
             if (user && user->use() == analysis::Use::WRITE && user->element() &&
                 elements_before_einsum.contains(user->element()->element_id()) &&
-                !this->subsetContainsSymbol(this->einsum_node_.in_indices(i), this->loop_.indvar()))
+                !(this->subsetContainsSymbol(this->einsum_node_.in_indices(i),
+                                             this->loop_.indvar()) &&
+                  this->subsetsMatch(user->subsets(), this->einsum_node_.in_indices(i))))
                 return false;
         }
     }
@@ -194,7 +220,9 @@ bool EinsumExpand::can_be_applied(builder::StructuredSDFGBuilder& builder,
         for (auto* user : users.uses(out_containers.at(this->einsum_node_.output(0)))) {
             if (user && user->use() == analysis::Use::READ && user->element() &&
                 elements_after_einsum.contains(user->element()->element_id()) &&
-                !this->subsetContainsSymbol(this->einsum_node_.out_indices(), this->loop_.indvar()))
+                !(this->subsetContainsSymbol(this->einsum_node_.out_indices(),
+                                             this->loop_.indvar()) &&
+                  this->subsetsMatch(user->subsets(), this->einsum_node_.out_indices())))
                 return false;
         }
     }
