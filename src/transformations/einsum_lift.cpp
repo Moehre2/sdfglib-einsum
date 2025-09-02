@@ -78,16 +78,21 @@ std::string EinsumLift::createAccessExpr(const std::string& name, const data_flo
 }
 
 bool EinsumLift::checkMulExpr(const symbolic::Expression expr) {
-    if (expr->get_type_code() == SymEngine::TypeID::SYMENGINE_SYMBOL)
+    if (expr->get_type_code() == SymEngine::TypeID::SYMENGINE_SYMBOL) {
         return true;
-    else if (expr->get_type_code() == SymEngine::TypeID::SYMENGINE_INTEGER)
+    } else if (expr->get_type_code() == SymEngine::TypeID::SYMENGINE_INTEGER) {
         return true;
-    else if (expr->get_type_code() == SymEngine::TypeID::SYMENGINE_MUL &&
-             expr->get_args().size() > 0) {
+    } else if (expr->get_type_code() == SymEngine::TypeID::SYMENGINE_MUL &&
+               expr->get_args().size() > 0) {
         for (symbolic::Expression mul : expr->get_args()) {
             if (!this->checkMulExpr(mul)) return false;
         }
         return true;
+    } else if (expr->get_type_code() == SymEngine::TypeID::SYMENGINE_POW &&
+               expr->get_args().size() == 2) {
+        if (expr->get_args().at(1)->get_type_code() != SymEngine::TypeID::SYMENGINE_INTEGER)
+            return false;
+        return this->checkMulExpr(expr->get_args().at(0));
     }
     return false;
 }
