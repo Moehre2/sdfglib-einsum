@@ -197,6 +197,7 @@ bool EinsumExpand::can_be_applied(builder::StructuredSDFGBuilder& builder,
     // E.g., disallow x[i] += ... * x[j] where i is the index variable of the loop
     for (size_t i = 0; i < this->einsum_node_.inputs().size(); ++i) {
         if (!in_containers.contains(this->einsum_node_.input(i))) continue;
+        if (this->einsum_node_.input(i) == this->einsum_node_.output(0)) continue;
         if (in_containers.at(this->einsum_node_.input(i)) !=
             out_containers.at(this->einsum_node_.output(0)))
             continue;
