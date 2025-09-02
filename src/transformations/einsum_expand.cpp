@@ -16,6 +16,7 @@
 #include <sdfg/transformations/transformation.h>
 #include <symengine/basic.h>
 
+#include <cstddef>
 #include <nlohmann/json_fwd.hpp>
 #include <set>
 #include <string>
@@ -163,6 +164,10 @@ bool EinsumExpand::can_be_applied(builder::StructuredSDFGBuilder& builder,
     for (auto& iedge : block_einsum->dataflow().in_edges(this->einsum_node_)) {
         auto& src = dynamic_cast<const data_flow::AccessNode&>(iedge.src());
         in_containers.insert({iedge.dst_conn(), src.data()});
+        if (block_einsum->dataflow().in_degree(src) == 0) {
+            elements_before_einsum.erase(iedge.element_id());
+            elements_before_einsum.erase(src.element_id());
+        }
     }
 
     // Create a map from each output connector to its output container of the einsum node
@@ -170,6 +175,23 @@ bool EinsumExpand::can_be_applied(builder::StructuredSDFGBuilder& builder,
     for (auto& oedge : block_einsum->dataflow().out_edges(this->einsum_node_)) {
         auto& dst = dynamic_cast<const data_flow::AccessNode&>(oedge.dst());
         out_containers.insert({oedge.src_conn(), dst.data()});
+        if (block_einsum->dataflow().out_degree(dst) == 0) {
+            elements_after_einsum.erase(oedge.element_id());
+            elements_after_einsum.erase(dst.element_id());
+        }
+    }
+
+    // Check if all occurrences of the output container in the inputs have the index variable of the
+    // loop in their subset
+    // E.g., disallow x[i] += ... * x[j] where i is the index variable of the loop
+    for (size_t i = 0; i < this->einsum_node_.inputs().size(); ++i) {
+        if (!in_containers.contains(this->einsum_node_.input(i))) continue;
+        if (this->einsum_node_.input(i) == this->einsum_node_.output(0)) continue;
+        if (in_containers.at(this->einsum_node_.input(i)) !=
+            out_containers.at(this->einsum_node_.output(0)))
+            continue;
+        if (!this->subsetContainsSymbol(this->einsum_node_.in_indices(i), this->loop_.indvar()))
+            return false;
     }
 
     // Perform a user analysis

@@ -105,6 +105,24 @@ void EinsumDispatcher::dispatch(codegen::PrettyPrinter& stream) {
 
     std::unordered_map<std::string, const types::IType&> src_types;
 
+    // Get output container
+    auto& oedge = *this->data_flow_graph_.out_edges(this->node_).begin();
+    auto& dst = dynamic_cast<const data_flow::AccessNode&>(oedge.dst());
+    const types::IType& dst_type = this->function_.type(dst.data());
+    auto& conn_name = oedge.src_conn();
+    auto& conn_type = types::infer_type(function_, dst_type, einsum_node->out_indices());
+
+    std::string dummy_declaration = this->language_extension_.declaration(dst.data(), conn_type);
+    std::string dummy_primitive_type =
+        this->language_extension_.primitive_type(conn_type.primitive_type());
+    std::string output_container;
+    if (dummy_primitive_type.size() + dst.data().size() + 1 >= dummy_declaration.size())
+        output_container = dst.data();
+    else
+        output_container = dummy_declaration.substr(dummy_primitive_type.size() + 1);
+
+    long long oii = einsum_node->getOutInputIndex();
+
     // Input connector declarations
     for (auto& iedge : this->data_flow_graph_.in_edges(this->node_)) {
         auto& src = dynamic_cast<const data_flow::AccessNode&>(iedge.src());
@@ -125,9 +143,50 @@ void EinsumDispatcher::dispatch(codegen::PrettyPrinter& stream) {
 
     stream << std::endl;
 
-    // Create outer maps as for loops
+    // Get outer maps
     std::vector<size_t> outer_maps = this->get_outer_maps(*einsum_node);
     size_t num_outer_maps = outer_maps.size();
+
+    // Parallelize loops if possible
+    bool reduction = false;
+    size_t outer_collapse = 0;
+    for (size_t i = 0; i < num_outer_maps; ++i) {
+        size_t j;
+        for (j = 0; j < i; ++j) {
+            if (symbolic::uses(einsum_node->num_iteration(outer_maps[i]),
+                               einsum_node->indvar(outer_maps[j])))
+                break;
+        }
+        if (j != i) break;
+        ++outer_collapse;
+        if (oii >= 0 && !reduction) {
+            bool indvar_in_out_indices = false;
+            for (auto& index : einsum_node->out_indices()) {
+                if (symbolic::eq(index, einsum_node->indvar(outer_maps[i]))) {
+                    indvar_in_out_indices = true;
+                    break;
+                }
+            }
+            if (!indvar_in_out_indices) reduction = true;
+        }
+    }
+    if (outer_collapse > 0) {
+        stream << "#pragma omp parallel for private(";
+        for (size_t i = 0; i < einsum_node->maps().size(); ++i) {
+            if (i > 0) stream << ", ";
+            stream << einsum_node->indvar(i)->__str__();
+        }
+        stream << ")";
+        if (outer_collapse > 1) stream << " collapse(" << outer_collapse << ")";
+        if (reduction)
+            stream << " reduction(+:" << output_container
+                   << this->language_extension_.subset(this->function_, dst_type,
+                                                       einsum_node->out_indices())
+                   << ")";
+        stream << std::endl;
+    }
+
+    // Create outer maps as for loops
     for (size_t outer_map : outer_maps) {
         const std::string indvar = einsum_node->indvar(outer_map)->__str__();
         stream << "for (" << indvar << " = 0; " << indvar << " < "
@@ -138,29 +197,12 @@ void EinsumDispatcher::dispatch(codegen::PrettyPrinter& stream) {
     }
 
     // Set output connector to previous value / to zero
-    auto& oedge = *this->data_flow_graph_.out_edges(this->node_).begin();
-    auto& dst = dynamic_cast<const data_flow::AccessNode&>(oedge.dst());
-    const types::IType& dst_type = this->function_.type(dst.data());
-    auto& conn_name = oedge.src_conn();
-    auto& conn_type = types::infer_type(function_, dst_type, einsum_node->out_indices());
-
-    std::string dummy_declaration = this->language_extension_.declaration(dst.data(), conn_type);
-    std::string dummy_primitive_type =
-        this->language_extension_.primitive_type(conn_type.primitive_type());
-    std::string output_container;
-    if (dummy_primitive_type.size() + dst.data().size() + 1 >= dummy_declaration.size())
-        output_container = dst.data();
-    else
-        output_container = dummy_declaration.substr(dummy_primitive_type.size() + 1);
-
-    long long iio = einsum_node->getOutInputIndex();
-
     if (dynamic_cast<const types::Pointer*>(&conn_type))
         stream << this->language_extension_.declaration(conn_name,
                                                         types::Scalar(conn_type.primitive_type()));
     else
         stream << this->language_extension_.declaration(conn_name, conn_type);
-    if (iio >= 0)
+    if (oii >= 0)
         stream << " = " << output_container
                << this->language_extension_.subset(this->function_, dst_type,
                                                    einsum_node->out_indices());
@@ -168,9 +210,36 @@ void EinsumDispatcher::dispatch(codegen::PrettyPrinter& stream) {
 
     stream << std::endl;
 
-    // Create inner maps as for loops
+    // Get inner maps
     std::vector<size_t> inner_maps = this->get_inner_maps(*einsum_node);
     size_t num_inner_maps = inner_maps.size();
+
+    // Parallelize loops if possible
+    if (num_outer_maps == 0) {
+        size_t inner_collapse = 0;
+        for (size_t i = 0; i < num_inner_maps; ++i) {
+            size_t j;
+            for (j = 0; j < i; ++j) {
+                if (symbolic::uses(einsum_node->num_iteration(inner_maps[i]),
+                                   einsum_node->indvar(inner_maps[j])))
+                    break;
+            }
+            if (j != i) break;
+            ++inner_collapse;
+        }
+        if (inner_collapse > 0) {
+            stream << "#pragma omp parallel for private(";
+            for (size_t i = 0; i < num_inner_maps; ++i) {
+                if (i > 0) stream << ", ";
+                stream << einsum_node->indvar(inner_maps[i])->__str__();
+            }
+            stream << ")";
+            if (inner_collapse > 1) stream << " collapse(" << inner_collapse << ")";
+            stream << " reduction(+:" << einsum_node->output(0) << ")" << std::endl;
+        }
+    }
+
+    // Create inner maps as for loops
     for (size_t inner_map : inner_maps) {
         const std::string indvar = einsum_node->indvar(inner_map)->__str__();
         stream << "for (" << indvar << " = 0; " << indvar << " < "
@@ -182,7 +251,7 @@ void EinsumDispatcher::dispatch(codegen::PrettyPrinter& stream) {
 
     // Calculate one entry
     stream << einsum_node->output(0) << " = ";
-    if (iio >= 0) stream << einsum_node->output(0) << " + ";
+    if (oii >= 0) stream << einsum_node->output(0) << " + ";
     bool first_mul = false;
     for (size_t i = 0; i < einsum_node->inputs().size(); ++i) {
         if (einsum_node->input(i) == einsum_node->output(0)) continue;

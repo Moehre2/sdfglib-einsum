@@ -25,6 +25,7 @@ unsigned long long i;
         float **_in1 = A;
         float **_in2 = B;
 
+        #pragma omp parallel for private(i, j, k) collapse(2)
         for (i = 0; i < I; i++)
         {
             for (k = 0; k < K; k++)
@@ -107,6 +108,7 @@ unsigned long long i;
                 float **_in1 = A;
                 float **_in2 = B;
 
+                #pragma omp parallel for private(j, k)
                 for (k = 0; k < K; k++)
                 {
                     float _out = C[i][k];
@@ -194,6 +196,7 @@ unsigned long long i;
 
                         float _out = C[i][k];
 
+                        #pragma omp parallel for private(j) reduction(+:_out)
                         for (j = 0; j < J; j++)
                         {
                             _out = _out + _in1[i][j] * _in2[j][k];
@@ -232,6 +235,7 @@ unsigned long long m;
         float ***_in2 = B;
         float ***_in3 = C;
 
+        #pragma omp parallel for private(i, j, k, l, m, n) collapse(3)
         for (i = 0; i < I; i++)
         {
             for (j = 0; j < J; j++)
@@ -279,6 +283,7 @@ unsigned long long i;
         float **_in1 = A;
         float *_in2 = b;
 
+        #pragma omp parallel for private(i, j)
         for (i = 0; i < I; i++)
         {
             float _out = c[i];
@@ -311,6 +316,7 @@ TEST(EinsumDispatcher, DiagonalExtraction) {
     {
         float **_in = A;
 
+        #pragma omp parallel for private(i)
         for (i = 0; i < I; i++)
         {
             float _out;
@@ -342,6 +348,7 @@ TEST(EinsumDispatcher, MatrixTrace) {
 
         float _out = *b;
 
+        #pragma omp parallel for private(i) reduction(+:_out)
         for (i = 0; i < I; i++)
         {
             _out = _out + _in[i][i];
@@ -371,6 +378,7 @@ unsigned long long i;
     {
         float **_in = A;
 
+        #pragma omp parallel for private(i, j) collapse(2)
         for (i = 0; i < I; i++)
         {
             for (j = 0; j < J; j++)
@@ -405,6 +413,7 @@ unsigned long long i;
     {
         float **_in = A;
 
+        #pragma omp parallel for private(i, j) collapse(2)
         for (j = 0; j < J; j++)
         {
             for (i = 0; i < I; i++)
@@ -440,6 +449,7 @@ TEST(EinsumDispatcher, DotProduct) {
 
         float _out = *c;
 
+        #pragma omp parallel for private(i) reduction(+:_out)
         for (i = 0; i < I; i++)
         {
             _out = _out + _in1[i] * _in2[i];
@@ -471,6 +481,7 @@ unsigned long long i;
         float **_in2 = B;
         float **_in3 = C;
 
+        #pragma omp parallel for private(i, j) collapse(2)
         for (i = 0; i < I; i++)
         {
             for (j = 0; j < J; j++)
@@ -507,6 +518,7 @@ TEST(EinsumDispatcher, VectorScaling) {
         float _in3 = c;
         float _in4 = d;
 
+        #pragma omp parallel for private(i)
         for (i = 0; i < I; i++)
         {
             float _out;
@@ -574,6 +586,7 @@ unsigned long long i;
         float **_in1 = A;
         float *_in2 = x;
 
+        #pragma omp parallel for private(i, j)
         for (i = 0; i < I; i++)
         {
             float _out = y[i];
@@ -644,6 +657,7 @@ unsigned long long i;
         float **_in1 = A;
         float *_in2 = x;
 
+        #pragma omp parallel for private(i, j) reduction(+:y[i])
         for (j = 0; j < J; j++)
         {
             for (i = 0; i < 1 + j; i++)

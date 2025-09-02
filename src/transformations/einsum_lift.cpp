@@ -16,6 +16,7 @@
 #include <sdfg/transformations/transformation.h>
 #include <symengine/basic.h>
 
+#include <algorithm>
 #include <functional>
 #include <nlohmann/json_fwd.hpp>
 #include <sstream>
@@ -77,12 +78,29 @@ std::string EinsumLift::createAccessExpr(const std::string& name, const data_flo
 }
 
 bool EinsumLift::checkMulExpr(const symbolic::Expression expr) {
-    if (expr->get_type_code() == SymEngine::TypeID::SYMENGINE_SYMBOL) return true;
-    if (expr->get_type_code() == SymEngine::TypeID::SYMENGINE_MUL && expr->get_args().size() > 0) {
+    if (expr->get_type_code() == SymEngine::TypeID::SYMENGINE_SYMBOL) {
+        return true;
+    } else if (expr->get_type_code() == SymEngine::TypeID::SYMENGINE_INTEGER) {
+        return true;
+    } else if (expr->get_type_code() == SymEngine::TypeID::SYMENGINE_MUL &&
+               expr->get_args().size() > 0) {
         for (symbolic::Expression mul : expr->get_args()) {
             if (!this->checkMulExpr(mul)) return false;
         }
         return true;
+    } else if (expr->get_type_code() == SymEngine::TypeID::SYMENGINE_POW &&
+               expr->get_args().size() == 2) {
+        if (expr->get_args().at(1)->get_type_code() != SymEngine::TypeID::SYMENGINE_INTEGER)
+            return false;
+        return this->checkMulExpr(expr->get_args().at(0));
+    }
+    return false;
+}
+
+bool EinsumLift::containsNegation(const symbolic::Expression& expr) {
+    if (expr->__str__() == "-1") return true;
+    for (symbolic::Expression& sub_expr : expr->get_args()) {
+        if (this->containsNegation(sub_expr)) return true;
     }
     return false;
 }
@@ -275,6 +293,13 @@ bool EinsumLift::can_be_applied(builder::StructuredSDFGBuilder& builder,
         else
             return false;
         if (symbolic::uses(scomp_mul, comp_out) || !this->checkMulExpr(scomp_mul)) return false;
+    } else if (scomp->get_type_code() == SymEngine::TypeID::SYMENGINE_SUBS &&
+               scomp->get_args().size() == 2 &&
+               scomp->get_args().at(0)->get_type_code() == SymEngine::TypeID::SYMENGINE_SYMBOL &&
+               symbolic::eq(scomp->get_args().at(0), comp_out)) {
+        if (symbolic::uses(scomp->get_args().at(1), comp_out) ||
+            !this->checkMulExpr(scomp->get_args().at(1)))
+            return false;
     } else if (scomp->get_type_code() == SymEngine::TypeID::SYMENGINE_MUL) {
         if (symbolic::uses(scomp, comp_out) || !this->checkMulExpr(scomp)) return false;
     } else if (scomp->get_type_code() == SymEngine::TypeID::SYMENGINE_SYMBOL) {
@@ -418,6 +443,15 @@ void EinsumLift::apply(builder::StructuredSDFGBuilder& builder,
             in_indices.erase(in_indices.begin() + i);
             --i;
         }
+    }
+
+    // Add -1 to inputs if it was created due to simplifying "dummy" calculation
+    // or: Add -1 to inputs if scomp is a substraction
+    if ((std::find(inputs.begin(), inputs.end(), "-1") == inputs.end() &&
+         this->containsNegation(scomp)) ||
+        scomp->get_type_code() == SymEngine::TypeID::SYMENGINE_SUBS) {
+        inputs.push_back("-1");
+        in_indices.push_back({});
     }
 
     // Get the most outer node and its parent node

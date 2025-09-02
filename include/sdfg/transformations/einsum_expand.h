@@ -2,6 +2,7 @@
 
 #include <sdfg/analysis/analysis.h>
 #include <sdfg/builder/structured_sdfg_builder.h>
+#include <sdfg/data_flow/memlet.h>
 #include <sdfg/structured_control_flow/control_flow_node.h>
 #include <sdfg/structured_control_flow/structured_loop.h>
 #include <sdfg/symbolic/symbolic.h>
