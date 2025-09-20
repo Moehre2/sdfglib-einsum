@@ -53,13 +53,13 @@ void BLASDispatcherGemv::dispatchCUBLAS(codegen::PrettyPrinter& stream,
     switch (blas_node.trans()) {
         case BLASTranspose_No:
             trans = "CUBLAS_OP_T";
-            x_size = m;
-            y_size = n;
+            x_size = n;
+            y_size = m;
             break;
         case BLASTranspose_Transpose:
             trans = "CUBLAS_OP_N";
-            x_size = n;
-            y_size = m;
+            x_size = m;
+            y_size = n;
             break;
     }
     const std::string alpha = blas_node.alpha();
