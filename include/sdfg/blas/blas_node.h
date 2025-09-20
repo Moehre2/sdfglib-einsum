@@ -57,6 +57,8 @@ constexpr const char* blasSide2String(const BLASSide side) {
     }
 }
 
+enum BLASImplementation { BLASImplementation_CBLAS, BLASImplementation_CUBLAS };
+
 class BLASNode : public data_flow::LibraryNode {
     BLASType type_;
 

@@ -10,22 +10,23 @@
 #include "sdfg/blas/blas_dispatcher_symv.h"
 #include "sdfg/blas/blas_dispatcher_syr.h"
 #include "sdfg/blas/blas_dispatcher_syrk.h"
+#include "sdfg/blas/blas_node.h"
 
 namespace sdfg {
 namespace blas {
 
 // This function must be called by the application using the plugin
-inline void register_blas_dispatchers() {
-    register_blas_dispatcher_axpy();
-    register_blas_dispatcher_copy();
+inline void register_blas_dispatchers(BLASImplementation impl = BLASImplementation_CBLAS) {
+    register_blas_dispatcher_axpy(impl);
+    register_blas_dispatcher_copy(impl);
     register_blas_dispatcher_dot();
-    register_blas_dispatcher_gemv();
+    register_blas_dispatcher_gemv(impl);
     register_blas_dispatcher_symv();
     register_blas_dispatcher_ger();
     register_blas_dispatcher_syr();
-    register_blas_dispatcher_gemm();
+    register_blas_dispatcher_gemm(impl);
     register_blas_dispatcher_symm();
-    register_blas_dispatcher_syrk();
+    register_blas_dispatcher_syrk(impl);
 }
 
 }  // namespace blas
